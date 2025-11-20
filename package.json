@@ -1,0 +1,28 @@
+{
+  "name": "axlrate-backend",
+  "version": "1.0.0",
+  "description": "Microservices backend with authentication",
+  "main": "index.js",
+  "scripts": {
+    "start:gateway": "cd services/api-gateway && npm start",
+    "start:auth": "cd services/auth-service && npm start",
+    "start:serpapi": "cd services/serpapi-service && npm start",
+    "dev:gateway": "cd services/api-gateway && npm run dev",
+    "dev:auth": "cd services/auth-service && npm run dev",
+    "dev:serpapi": "cd services/serpapi-service && npm run dev",
+    "dev": "concurrently \"npm run dev:gateway\" \"npm run dev:auth\" \"npm run dev:serpapi\"",
+    "start": "concurrently \"npm run start:gateway\" \"npm run start:auth\" \"npm run start:serpapi\"",
+    "install:all": "npm install && cd services/api-gateway && npm install && cd ../auth-service && npm install && cd ../serpapi-service && npm install && cd ../.. && cd shared && npm install"
+  },
+  "keywords": [
+    "microservices",
+    "nodejs",
+    "express",
+    "authentication"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
