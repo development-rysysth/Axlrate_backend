@@ -1,17 +1,22 @@
-require('dotenv').config({ path: '../../.env' });
-const express = require('express');
-const cors = require('cors');
-const connectDB = require('./config/database');
-const User = require('./models/User');
-const { 
+import dotenv from 'dotenv';
+dotenv.config({ path: '../../.env' });
+import express, { Request, Response } from 'express';
+import cors from 'cors';
+import { connectDB } from './config/database';
+import User from './models/User';
+import { 
   generateAccessToken, 
   generateRefreshToken, 
   verifyRefreshToken,
   validateRegister,
   validateLogin,
   validateRefreshToken,
-  authenticateToken
-} = require('../../shared');
+  authenticateToken,
+  RegisterRequestBody,
+  LoginRequestBody,
+  RefreshTokenRequestBody,
+  AuthenticatedRequest
+} from '../../shared';
 
 // Connect to MongoDB
 connectDB();
@@ -27,7 +32,7 @@ app.use(express.json());
  * Register endpoint
  * POST /auth/register
  */
-app.post('/auth/register', validateRegister, async (req, res) => {
+app.post('/auth/register', validateRegister, async (req: Request<{}, {}, RegisterRequestBody>, res: Response) => {
   try {
     const {
       name,
@@ -40,6 +45,8 @@ app.post('/auth/register', validateRegister, async (req, res) => {
       numberOfRooms,
       password,
     } = req.body;
+
+    console.log('Register request body:', req.body);
 
     // Check if user already exists
     const existingUser = await User.findOne({ businessEmail });
@@ -70,7 +77,7 @@ app.post('/auth/register', validateRegister, async (req, res) => {
     await user.save();
 
     // Return user data (password is automatically excluded by toJSON method)
-    res.status(201).json({
+    return res.status(201).json({
       message: 'User registered successfully',
       user: user.toJSON(),
       tokens: {
@@ -78,21 +85,22 @@ app.post('/auth/register', validateRegister, async (req, res) => {
         refreshToken,
       },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Register error:', error);
     
     // Handle MongoDB duplicate key error
-    if (error.code === 11000) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 11000) {
       return res.status(409).json({ error: 'User with this business email already exists' });
     }
     
     // Handle validation errors
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
+    if (error && typeof error === 'object' && 'name' in error && error.name === 'ValidationError' && 'errors' in error) {
+      const validationError = error as { errors: Record<string, { message: string }> };
+      const errors = Object.values(validationError.errors).map(err => err.message);
       return res.status(400).json({ error: errors.join(', ') });
     }
     
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -100,7 +108,7 @@ app.post('/auth/register', validateRegister, async (req, res) => {
  * Login endpoint
  * POST /auth/login
  */
-app.post('/auth/login', validateLogin, async (req, res) => {
+app.post('/auth/login', validateLogin, async (req: Request<{}, {}, LoginRequestBody>, res: Response) => {
   try {
     const { businessEmail, password } = req.body;
 
@@ -126,7 +134,7 @@ app.post('/auth/login', validateLogin, async (req, res) => {
     await user.save();
 
     // Return user data (password is automatically excluded by toJSON method)
-    res.json({
+    return res.json({
       message: 'Login successful',
       user: user.toJSON(),
       tokens: {
@@ -136,7 +144,7 @@ app.post('/auth/login', validateLogin, async (req, res) => {
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -144,7 +152,7 @@ app.post('/auth/login', validateLogin, async (req, res) => {
  * Refresh token endpoint
  * POST /auth/refresh
  */
-app.post('/auth/refresh', validateRefreshToken, async (req, res) => {
+app.post('/auth/refresh', validateRefreshToken, async (req: Request<{}, {}, RefreshTokenRequestBody>, res: Response) => {
   try {
     const { refreshToken } = req.body;
 
@@ -161,12 +169,13 @@ app.post('/auth/refresh', validateRefreshToken, async (req, res) => {
     const tokenPayload = { id: user._id.toString(), businessEmail: user.businessEmail };
     const newAccessToken = generateAccessToken(tokenPayload);
 
-    res.json({
+    return res.json({
       accessToken: newAccessToken,
     });
   } catch (error) {
     console.error('Refresh token error:', error);
-    res.status(403).json({ error: error.message });
+    const errorMessage = error instanceof Error ? error.message : 'Invalid refresh token';
+    return res.status(403).json({ error: errorMessage });
   }
 });
 
@@ -174,7 +183,7 @@ app.post('/auth/refresh', validateRefreshToken, async (req, res) => {
  * Logout endpoint
  * POST /auth/logout
  */
-app.post('/auth/logout', async (req, res) => {
+app.post('/auth/logout', async (req: Request<{}, {}, RefreshTokenRequestBody>, res: Response) => {
   try {
     const { refreshToken } = req.body;
 
@@ -189,10 +198,10 @@ app.post('/auth/logout', async (req, res) => {
       await user.save();
     }
 
-    res.json({ message: 'Logged out successfully' });
+    return res.json({ message: 'Logged out successfully' });
   } catch (error) {
     console.error('Logout error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -200,7 +209,7 @@ app.post('/auth/logout', async (req, res) => {
  * Get user profile
  * GET /users/:id
  */
-app.get('/users/:id', authenticateToken, async (req, res) => {
+app.get('/users/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -211,16 +220,16 @@ app.get('/users/:id', authenticateToken, async (req, res) => {
     }
 
     // Return user (password is automatically excluded by toJSON method)
-    res.json(user.toJSON());
-  } catch (error) {
+    return res.json(user.toJSON());
+  } catch (error: unknown) {
     console.error('Get user error:', error);
     
     // Handle invalid MongoDB ObjectId
-    if (error.name === 'CastError') {
+    if (error && typeof error === 'object' && 'name' in error && error.name === 'CastError') {
       return res.status(400).json({ error: 'Invalid user ID' });
     }
     
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -228,7 +237,7 @@ app.get('/users/:id', authenticateToken, async (req, res) => {
  * Update user profile
  * PUT /users/:id
  */
-app.put('/users/:id', authenticateToken, async (req, res) => {
+app.put('/users/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
@@ -249,33 +258,34 @@ app.put('/users/:id', authenticateToken, async (req, res) => {
     }
 
     // Return updated user (password is automatically excluded by toJSON method)
-    res.json(user.toJSON());
-  } catch (error) {
+    return res.json(user.toJSON());
+  } catch (error: unknown) {
     console.error('Update user error:', error);
     
     // Handle invalid MongoDB ObjectId
-    if (error.name === 'CastError') {
+    if (error && typeof error === 'object' && 'name' in error && error.name === 'CastError') {
       return res.status(400).json({ error: 'Invalid user ID' });
     }
     
     // Handle validation errors
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
+    if (error && typeof error === 'object' && 'name' in error && error.name === 'ValidationError' && 'errors' in error) {
+      const validationError = error as { errors: Record<string, { message: string }> };
+      const errors = Object.values(validationError.errors).map(err => err.message);
       return res.status(400).json({ error: errors.join(', ') });
     }
     
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'auth-service' });
+app.get('/health', (_req: Request, res: Response) => {
+  return res.json({ status: 'ok', service: 'auth-service' });
 });
 
 app.listen(PORT, () => {
   console.log(`Auth service running on port ${PORT}`);
 });
 
-module.exports = app;
+export default app;
 

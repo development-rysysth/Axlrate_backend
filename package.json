@@ -4,6 +4,11 @@
   "description": "Microservices backend with authentication",
   "main": "index.js",
   "scripts": {
+    "build": "npm run build:shared && npm run build:gateway && npm run build:auth && npm run build:serpapi",
+    "build:shared": "cd shared && npm run build",
+    "build:gateway": "cd services/api-gateway && npm run build",
+    "build:auth": "cd services/auth-service && npm run build",
+    "build:serpapi": "cd services/serpapi-service && npm run build",
     "start:gateway": "cd services/api-gateway && npm start",
     "start:auth": "cd services/auth-service && npm start",
     "start:serpapi": "cd services/serpapi-service && npm start",

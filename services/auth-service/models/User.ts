@@ -1,7 +1,8 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+import mongoose, { Schema, Model } from 'mongoose';
+import bcrypt from 'bcryptjs';
+import { IUser } from '../../../shared/types';
 
-const userSchema = new mongoose.Schema(
+const userSchema = new Schema<IUser>(
   {
     // Basic Info
     name: {
@@ -72,9 +73,10 @@ const userSchema = new mongoose.Schema(
     },
     
     // Refresh Tokens (array to support multiple devices)
-    refreshTokens: [{
-      type: String,
-    }],
+    refreshTokens: {
+      type: [String],
+      default: [],
+    },
   },
   {
     timestamps: true, // Adds createdAt and updatedAt automatically
@@ -93,12 +95,12 @@ userSchema.pre('save', async function (next) {
     this.password = await bcrypt.hash(this.password, saltRounds);
     next();
   } catch (error) {
-    next(error);
+    next(error as Error);
   }
 });
 
 // Method to compare password
-userSchema.methods.comparePassword = async function (candidatePassword) {
+userSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
@@ -110,7 +112,7 @@ userSchema.methods.toJSON = function () {
   return userObject;
 };
 
-const User = mongoose.model('User', userSchema);
+const User: Model<IUser> = mongoose.model<IUser>('User', userSchema);
 
-module.exports = User;
+export default User;
 

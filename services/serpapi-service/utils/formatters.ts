@@ -1,11 +1,11 @@
-const { format } = require('date-fns');
+import { format } from 'date-fns';
 
 /**
  * Formats hotel name to query string format
- * @param {string} hotelName - The hotel name to format
- * @returns {string} Formatted hotel query string
+ * @param hotelName - The hotel name to format
+ * @returns Formatted hotel query string
  */
-function formatHotelQuery(hotelName) {
+export function formatHotelQuery(hotelName: string): string {
   return hotelName
     .toLowerCase()
     .trim()
@@ -15,10 +15,10 @@ function formatHotelQuery(hotelName) {
 
 /**
  * Formats date to YYYY-MM-DD format
- * @param {Date|string} date - Date to format
- * @returns {string} Formatted date string
+ * @param date - Date to format
+ * @returns Formatted date string
  */
-function formatDate(date) {
+export function formatDate(date: Date | string): string {
   // If it's a string, convert to Date first
   const dateObj = typeof date === 'string' ? new Date(date) : date;
   
@@ -29,9 +29,4 @@ function formatDate(date) {
   
   return format(dateObj, 'yyyy-MM-dd');
 }
-
-module.exports = {
-  formatHotelQuery,
-  formatDate,
-};
 

@@ -1,6 +1,8 @@
-const Joi = require('joi');
+import { Request, Response, NextFunction } from 'express';
+import Joi from 'joi';
+import { RegisterRequestBody, LoginRequestBody, RefreshTokenRequestBody } from '../types';
 
-const registerSchema = Joi.object({
+const registerSchema = Joi.object<RegisterRequestBody>({
   // Basic Info
   name: Joi.string().min(2).max(50).required().messages({
     'string.min': 'Name must be at least 2 characters',
@@ -53,7 +55,7 @@ const registerSchema = Joi.object({
   }),
 });
 
-const loginSchema = Joi.object({
+const loginSchema = Joi.object<LoginRequestBody>({
   businessEmail: Joi.string().email().required().messages({
     'string.email': 'Please provide a valid business email',
     'any.required': 'Business email is required',
@@ -63,17 +65,18 @@ const loginSchema = Joi.object({
   }),
 });
 
-const refreshTokenSchema = Joi.object({
+const refreshTokenSchema = Joi.object<RefreshTokenRequestBody>({
   refreshToken: Joi.string().required(),
 });
 
 /**
  * Validate register request
  */
-const validateRegister = (req, res, next) => {
+export const validateRegister = (req: Request, res: Response, next: NextFunction): void => {
   const { error } = registerSchema.validate(req.body);
   if (error) {
-    return res.status(400).json({ error: error.details[0].message });
+    res.status(400).json({ error: error.details[0].message });
+    return;
   }
   next();
 };
@@ -81,10 +84,11 @@ const validateRegister = (req, res, next) => {
 /**
  * Validate login request
  */
-const validateLogin = (req, res, next) => {
+export const validateLogin = (req: Request, res: Response, next: NextFunction): void => {
   const { error } = loginSchema.validate(req.body);
   if (error) {
-    return res.status(400).json({ error: error.details[0].message });
+    res.status(400).json({ error: error.details[0].message });
+    return;
   }
   next();
 };
@@ -92,17 +96,12 @@ const validateLogin = (req, res, next) => {
 /**
  * Validate refresh token request
  */
-const validateRefreshToken = (req, res, next) => {
+export const validateRefreshToken = (req: Request, res: Response, next: NextFunction): void => {
   const { error } = refreshTokenSchema.validate(req.body);
   if (error) {
-    return res.status(400).json({ error: error.details[0].message });
+    res.status(400).json({ error: error.details[0].message });
+    return;
   }
   next();
-};
-
-module.exports = {
-  validateRegister,
-  validateLogin,
-  validateRefreshToken,
 };
 

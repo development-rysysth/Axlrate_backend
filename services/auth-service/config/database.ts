@@ -1,8 +1,8 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
-const connectDB = async () => {
+export const connectDB = async (): Promise<void> => {
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI, {
+    const conn = await mongoose.connect(process.env.MONGODB_URI || '', {
       // These options are recommended for Mongoose 6+
       // useNewUrlParser: true,
       // useUnifiedTopology: true,
@@ -14,6 +14,4 @@ const connectDB = async () => {
     process.exit(1);
   }
 };
-
-module.exports = connectDB;
 
