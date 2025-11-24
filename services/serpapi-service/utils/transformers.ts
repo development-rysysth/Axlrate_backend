@@ -28,40 +28,34 @@ function extractNumericValue(value: any, defaultValue: number = 0): number {
  * @param searchParams - Search parameters used for the query
  * @returns Transformed data matching ISerpData interface
  */
-export function transformSerpApiResponse(
-  serpApiResponse: any,
-  searchParams: {
-    hotelQuery: string;
-    checkInDate: string;
-    checkOutDate: string;
-    gl: string;
-    hl: string;
-    currency: string;
-  }
-): Partial<ISerpData> {
-  // Extract hotel data from SerpAPI response
-  // The response structure may vary, so we handle it flexibly
+export function transformSerpApiResponse(serpApiResponse: any, searchParams: any) {
   const hotelData = serpApiResponse.properties?.[0] || serpApiResponse;
+
+  const safeString = (v: any) =>
+    v !== undefined && v !== null && v !== "" ? String(v) : undefined;
+
+  const safeNumber = (v: any) =>
+    v !== undefined && v !== null && !isNaN(Number(v))
+      ? Number(v)
+      : undefined;
 
   return {
     search_metadata: {
       id: serpApiResponse.search_metadata?.id || `serp_${Date.now()}`,
-      status: serpApiResponse.search_metadata?.status || 'Success',
-      json_endpoint: serpApiResponse.search_metadata?.json_endpoint || '',
-      created_at: serpApiResponse.search_metadata?.created_at 
+      status: serpApiResponse.search_metadata?.status,
+      json_endpoint: serpApiResponse.search_metadata?.json_endpoint,
+      created_at: serpApiResponse.search_metadata?.created_at
         ? new Date(serpApiResponse.search_metadata.created_at)
         : new Date(),
       processed_at: serpApiResponse.search_metadata?.processed_at
         ? new Date(serpApiResponse.search_metadata.processed_at)
         : new Date(),
-      google_hotels_url: serpApiResponse.search_metadata?.google_hotels_url || '',
-      raw_html_file: serpApiResponse.search_metadata?.raw_html_file || '',
-      prettify_html_file: serpApiResponse.search_metadata?.prettify_html_file || '',
-      total_time_taken: extractNumericValue(
-        serpApiResponse.search_metadata?.total_time_taken,
-        0
-      ),
+      google_hotels_url: serpApiResponse.search_metadata?.google_hotels_url,
+      raw_html_file: serpApiResponse.search_metadata?.raw_html_file,
+      prettify_html_file: serpApiResponse.search_metadata?.prettify_html_file,
+      total_time_taken: safeNumber(serpApiResponse.search_metadata?.total_time_taken),
     },
+
     search_parameters: {
       engine: serpApiResponse.search_parameters?.engine || 'google_hotels',
       q: searchParams.hotelQuery,
@@ -70,56 +64,79 @@ export function transformSerpApiResponse(
       currency: searchParams.currency || 'USD',
       check_in_date: new Date(searchParams.checkInDate),
       check_out_date: new Date(searchParams.checkOutDate),
-      adults: extractNumericValue(serpApiResponse.search_parameters?.adults, 2),
-      children: extractNumericValue(serpApiResponse.search_parameters?.children, 0),
+      adults: safeNumber(serpApiResponse.search_parameters?.adults) ?? 2,
+      children: safeNumber(serpApiResponse.search_parameters?.children) ?? 0,
     },
-    type: hotelData.type || '',
-    name: hotelData.name || '',
-    description: hotelData.description || '',
-    link: hotelData.link || '',
-    property_token: hotelData.property_token || '',
-    serpapi_property_details_link: hotelData.serpapi_property_details_link || '',
-    address: hotelData.address || '',
-    directions: hotelData.directions || '',
-    phone: hotelData.phone || '',
-    phone_link: hotelData.phone_link || '',
-    gps_coordinates: hotelData.gps_coordinates 
+
+    type: safeString(hotelData.type),
+    name: safeString(hotelData.name),
+    description: safeString(hotelData.description),
+    link: safeString(hotelData.link),
+    property_token: safeString(hotelData.property_token),
+    serpapi_property_details_link: safeString(hotelData.serpapi_property_details_link),
+    address: safeString(hotelData.address),
+    directions: safeString(hotelData.directions),
+    phone: safeString(hotelData.phone),
+    phone_link: safeString(hotelData.phone_link),
+
+    gps_coordinates: hotelData.gps_coordinates
       ? {
-          latitude: extractNumericValue(hotelData.gps_coordinates.latitude, 0),
-          longitude: extractNumericValue(hotelData.gps_coordinates.longitude, 0),
+          latitude: safeNumber(hotelData.gps_coordinates.latitude),
+          longitude: safeNumber(hotelData.gps_coordinates.longitude),
         }
-      : {
-          latitude: 0,
-          longitude: 0,
-        },
-    check_in_time: hotelData.check_in_time || '',
-    check_out_time: hotelData.check_out_time || '',
-    rate_per_night: hotelData.rate_per_night || {},
-    total_rate: hotelData.total_rate || {},
-    typical_price_range: hotelData.typical_price_range,
-    deal: hotelData.deal,
-    deal_description: hotelData.deal_description,
-    featured_prices: hotelData.featured_prices || [],
-    prices: hotelData.prices || [],
-    nearby_places: hotelData.nearby_places || [],
-    hotel_class: hotelData.hotel_class || '',
-    extracted_hotel_class: extractNumericValue(hotelData.extracted_hotel_class, 0),
-    images: hotelData.images || [],
-    overall_rating: extractNumericValue(hotelData.overall_rating, 0),
-    reviews: extractNumericValue(hotelData.reviews, 0),
-    ratings: hotelData.ratings || [],
-    location_rating: hotelData.location_rating !== undefined && hotelData.location_rating !== null
-      ? extractNumericValue(hotelData.location_rating, 0)
       : undefined,
-    reviews_breakdown: hotelData.reviews_breakdown || [],
-    other_reviews: hotelData.other_reviews || [],
-    amenities: hotelData.amenities || [],
-    excluded_amenities: hotelData.excluded_amenities,
+
+    check_in_time: safeString(hotelData.check_in_time),
+    check_out_time: safeString(hotelData.check_out_time),
+
+    rate_per_night: hotelData.rate_per_night,
+    total_rate: hotelData.total_rate,
+    typical_price_range: hotelData.typical_price_range,
+
+    deal: safeString(hotelData.deal),
+    deal_description: safeString(hotelData.deal_description),
+
+    featured_prices: Array.isArray(hotelData.featured_prices)
+      ? hotelData.featured_prices
+      : [],
+
+    prices: Array.isArray(hotelData.prices) ? hotelData.prices : [],
+
+    nearby_places: Array.isArray(hotelData.nearby_places)
+      ? hotelData.nearby_places
+      : [],
+
+    hotel_class: safeString(hotelData.hotel_class),
+    extracted_hotel_class: safeNumber(hotelData.extracted_hotel_class),
+
+    images: Array.isArray(hotelData.images) ? hotelData.images : [],
+
+    overall_rating: safeNumber(hotelData.overall_rating),
+    reviews: safeNumber(hotelData.reviews),
+    ratings: Array.isArray(hotelData.ratings) ? hotelData.ratings : [],
+
+    location_rating: safeNumber(hotelData.location_rating),
+
+    reviews_breakdown: Array.isArray(hotelData.reviews_breakdown)
+      ? hotelData.reviews_breakdown
+      : [],
+
+    other_reviews: Array.isArray(hotelData.other_reviews)
+      ? hotelData.other_reviews
+      : [],
+
+    amenities: Array.isArray(hotelData.amenities) ? hotelData.amenities : [],
+    excluded_amenities: Array.isArray(hotelData.excluded_amenities)
+      ? hotelData.excluded_amenities
+      : [],
+
     amenities_detailed: hotelData.amenities_detailed || {
       groups: [],
       popular: [],
     },
+
     health_and_safety: hotelData.health_and_safety,
   };
 }
+
 

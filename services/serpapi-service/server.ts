@@ -175,7 +175,7 @@ app.get('/serpapi/fetch-rates', async (req: Request, res: Response) => {
     let savedSerpData = null;
     try {
       // Log transformed data for debugging (especially total_time_taken)
-      console.log('[GET /serpapi/fetch-rates] Transformed data total_time_taken:', 
+      console.log('[GET /serpapi/fetch-rates] Transformed data total_time_taken:',
         transformedData.search_metadata?.total_time_taken,
         'Type:', typeof transformedData.search_metadata?.total_time_taken
       );
@@ -296,7 +296,7 @@ app.post('/serpapi/fetch-rates', validateFetchRates, async (req: Request<{}, {},
     let savedSerpData = null;
     try {
       // Log transformed data for debugging (especially total_time_taken)
-      console.log('[POST /serpapi/fetch-rates] Transformed data total_time_taken:', 
+      console.log('[POST /serpapi/fetch-rates] Transformed data total_time_taken:',
         transformedData.search_metadata?.total_time_taken,
         'Type:', typeof transformedData.search_metadata?.total_time_taken
       );
@@ -349,25 +349,25 @@ app.post('/serpapi/fetch-rates', validateFetchRates, async (req: Request<{}, {},
     });
   } catch (error: unknown) {
     console.error('Fetch rates error:', error);
-    
+
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
+
     // Handle specific error types
     if (errorMessage.includes('SERP_API_KEY')) {
-      return res.status(500).json({ 
+      return res.status(500).json({
         error: 'SerpAPI configuration error',
         message: errorMessage,
       });
     }
-    
+
     if (errorMessage.includes('Invalid date')) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Invalid date format',
         message: errorMessage,
       });
     }
-    
-    return res.status(500).json({ 
+
+    return res.status(500).json({
       error: 'Failed to fetch hotel rates',
       message: errorMessage,
     });
@@ -379,8 +379,8 @@ app.post('/serpapi/fetch-rates', validateFetchRates, async (req: Request<{}, {},
  * GET /health
  */
 app.get('/health', (_req: Request, res: Response) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     service: 'serpapi-service',
     hasApiKey: !!process.env.SERP_API_KEY,
   });
@@ -390,182 +390,138 @@ app.get('/health', (_req: Request, res: Response) => {
  * Batch fetch rates for all hotels from constants
  * POST /serpapi/batch-fetch-rates
  */
-app.post('/serpapi/batch-fetch-rates', async (_req: Request, res: Response) => {
+app.post('/serpapi/batch-fetch-rates', async (req: Request, res: Response) => {
   try {
-    const results = [];
-    const today = new Date();
+    const { checkInDate } = req.body;
+    const results: any[] = [];
+
+    const today = checkInDate ? new Date(checkInDate) : new Date();
+    if (checkInDate && isNaN(today.getTime())) {
+      return res.status(400).json({ success: false, error: "Invalid checkInDate format" });
+    }
+
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const dayAfterTomorrow = new Date(tomorrow);
-    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
 
-    // Format dates
     const todayStr = formatDate(today);
     const tomorrowStr = formatDate(tomorrow);
-    const dayAfterTomorrowStr = formatDate(dayAfterTomorrow);
 
-    console.log(`[BATCH FETCH] Starting batch fetch for ${hotels.length} hotels`);
-    console.log(`[BATCH FETCH] Date ranges: ${todayStr} -> ${tomorrowStr}, ${tomorrowStr} -> ${dayAfterTomorrowStr}`);
+    console.log(`\n[BATCH FETCH] Starting for ${hotels.length} hotels.`);
+    console.log(`[BATCH FETCH] Date range: ${todayStr} → ${tomorrowStr}`);
 
-    // Process each hotel
     for (const hotel of hotels) {
       const hotelName = hotel.name;
-      console.log(`[BATCH FETCH] Processing hotel: ${hotelName}`);
+      console.log(`\n[BATCH FETCH] Processing: ${hotelName}`);
 
-      // Fetch rates for today -> tomorrow
       try {
-        const hotelQuery1 = formatHotelQuery(hotelName);
-        const ratesData1 = await fetchHotelRates({
-          hotelQuery: hotelQuery1,
+        const hotelQuery = formatHotelQuery(hotelName);
+
+        // Fetch SerpAPI Data
+        const ratesData = await fetchHotelRates({
+          hotelQuery,
           checkInDate: todayStr,
           checkOutDate: tomorrowStr,
           gl: 'us',
           hl: 'en',
-          currency: 'USD',
+          currency: 'USD'
         });
 
-        const transformedData1 = transformSerpApiResponse(ratesData1, {
-          hotelQuery: hotelQuery1,
+        const transformed = transformSerpApiResponse(ratesData, {
+          hotelQuery,
           checkInDate: todayStr,
           checkOutDate: tomorrowStr,
           gl: 'us',
           hl: 'en',
-          currency: 'USD',
+          currency: 'USD'
         });
 
-        let saved1 = null;
-        try {
-          const existing1 = await SerpData.findOne({
-            $or: [
-              { 'search_metadata.id': transformedData1.search_metadata?.id },
-              { property_token: transformedData1.property_token },
-            ],
-          });
+        let savedDoc = null;
 
-          if (existing1) {
-            Object.assign(existing1, transformedData1);
-            saved1 = await existing1.save();
-            console.log(`[BATCH FETCH] Updated: ${hotelName} (${todayStr} -> ${tomorrowStr})`);
-          } else {
-            saved1 = await SerpData.create(transformedData1);
-            console.log(`[BATCH FETCH] Created: ${hotelName} (${todayStr} -> ${tomorrowStr})`);
-          }
-        } catch (dbError) {
-          console.error(`[BATCH FETCH] DB error for ${hotelName} (${todayStr} -> ${tomorrowStr}):`, dbError);
-        }
+        // ------------------------
+        //     SAVE TO DATABASE
+        // ------------------------
+       try {
+  savedDoc = await SerpData.create(transformed);
+
+  console.log(
+    `[DB] Created new record for ${hotelName} (${todayStr} -> ${tomorrowStr})`
+  );
+
+  results.push({
+    hotelName,
+    checkIn: todayStr,
+    checkOut: tomorrowStr,
+    success: true,
+    databaseId: savedDoc?._id || null
+  });
+
+} catch (dbError: any) {
+  console.error(`\n❌ [DB ERROR] FAILED to save ${hotelName}`);
+  console.error(`Message: ${dbError.message}`);
+  console.error(`Code: ${dbError.code}`);
+  console.error("Field Errors:", dbError.errors);
+  console.error("Full Error:", dbError);
+
+  results.push({
+    hotelName,
+    checkIn: todayStr,
+    checkOut: tomorrowStr,
+    success: false,
+    error: dbError.message,
+    fieldErrors: dbError.errors,
+  });
+
+  continue; // Move to next hotel
+}
+
+
+      } catch (fetchError: any) {
+        console.error(`\n❌ [FETCH ERROR] Failed to fetch rates for ${hotelName}`);
+        console.error(fetchError);
 
         results.push({
           hotelName,
           checkIn: todayStr,
           checkOut: tomorrowStr,
-          success: true,
-          saved: !!saved1,
-          databaseId: saved1?._id?.toString() || null,
-        });
-      } catch (error) {
-        console.error(`[BATCH FETCH] Error fetching rates for ${hotelName} (${todayStr} -> ${tomorrowStr}):`, error);
-        results.push({
-          hotelName,
-          checkIn: todayStr,
-          checkOut: tomorrowStr,
           success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: fetchError.message,
         });
       }
 
-      // Fetch rates for tomorrow -> day after tomorrow
-      try {
-        const hotelQuery2 = formatHotelQuery(hotelName);
-        const ratesData2 = await fetchHotelRates({
-          hotelQuery: hotelQuery2,
-          checkInDate: tomorrowStr,
-          checkOutDate: dayAfterTomorrowStr,
-          gl: 'us',
-          hl: 'en',
-          currency: 'USD',
-        });
-
-        const transformedData2 = transformSerpApiResponse(ratesData2, {
-          hotelQuery: hotelQuery2,
-          checkInDate: tomorrowStr,
-          checkOutDate: dayAfterTomorrowStr,
-          gl: 'us',
-          hl: 'en',
-          currency: 'USD',
-        });
-
-        let saved2 = null;
-        try {
-          const existing2 = await SerpData.findOne({
-            $or: [
-              { 'search_metadata.id': transformedData2.search_metadata?.id },
-              { property_token: transformedData2.property_token },
-            ],
-          });
-
-          if (existing2) {
-            Object.assign(existing2, transformedData2);
-            saved2 = await existing2.save();
-            console.log(`[BATCH FETCH] Updated: ${hotelName} (${tomorrowStr} -> ${dayAfterTomorrowStr})`);
-          } else {
-            saved2 = await SerpData.create(transformedData2);
-            console.log(`[BATCH FETCH] Created: ${hotelName} (${tomorrowStr} -> ${dayAfterTomorrowStr})`);
-          }
-        } catch (dbError) {
-          console.error(`[BATCH FETCH] DB error for ${hotelName} (${tomorrowStr} -> ${dayAfterTomorrowStr}):`, dbError);
-        }
-
-        results.push({
-          hotelName,
-          checkIn: tomorrowStr,
-          checkOut: dayAfterTomorrowStr,
-          success: true,
-          saved: !!saved2,
-          databaseId: saved2?._id?.toString() || null,
-        });
-      } catch (error) {
-        console.error(`[BATCH FETCH] Error fetching rates for ${hotelName} (${tomorrowStr} -> ${dayAfterTomorrowStr}):`, error);
-        results.push({
-          hotelName,
-          checkIn: tomorrowStr,
-          checkOut: dayAfterTomorrowStr,
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
-      }
-
-      // Add a small delay between hotels to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Rate Limit Protection
+      await new Promise(res => setTimeout(res, 1000));
     }
 
     const successCount = results.filter(r => r.success).length;
-    const failureCount = results.filter(r => !r.success).length;
+    const failureCount = results.length - successCount;
 
-    console.log(`[BATCH FETCH] Completed: ${successCount} successful, ${failureCount} failed`);
+    console.log(`\n[BATCH FETCH] Completed: ${successCount} ✓  /  ${failureCount} ✗`);
 
     return res.json({
       success: true,
-      message: `Batch fetch completed: ${successCount} successful, ${failureCount} failed`,
-      totalHotels: hotels.length,
-      totalRequests: results.length,
+      message: `Batch fetch completed`,
+      successCount,
+      failureCount,
       results,
     });
-  } catch (error) {
-    console.error('[BATCH FETCH] Fatal error:', error);
+
+  } catch (fatalError: any) {
+    console.error("\n🔥 FATAL BATCH ERROR:", fatalError);
     return res.status(500).json({
       success: false,
-      error: 'Failed to process batch fetch',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      error: "Fatal server error",
+      message: fatalError.message,
     });
   }
 });
+
 
 // Connect to database and start server
 const startServer = async () => {
   try {
     // Connect to MongoDB
     await connectDB();
-    
+
     // Start server
     app.listen(PORT, () => {
       console.log(`SerpAPI service running on port ${PORT}`);

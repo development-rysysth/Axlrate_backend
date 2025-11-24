@@ -15,8 +15,5 @@ export const hotels: {
     },
     {
         name: "Quality Inn New London"
-    },
-    {
-        name: "Super 8 by Wyndham Plover Stevens Point Area"
     }
 ]

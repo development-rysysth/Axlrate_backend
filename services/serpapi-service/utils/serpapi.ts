@@ -52,7 +52,7 @@ export async function fetchHotelRates({
     const axiosError = error as { response?: { data?: { error?: string } }; message?: string };
     console.error('SerpAPI Error:', axiosError.response?.data || axiosError.message);
     throw new Error(
-      axiosError.response?.data?.error || 
+      axiosError.response?.data?.error ||
       'Failed to fetch hotel rates from SerpAPI'
     );
   }
@@ -90,23 +90,7 @@ export async function fetchSerpDataSummaries() {
   if (!serpDatas || serpDatas.length === 0) return [];
 
   const WHITELIST_OTAS = ["Booking.com", "Expedia.com", "Hotels.com", "Agoda"];
-  
-  // Use Map to group by hotel name
-  const hotelsMap = new Map<string, {
-    hotel_name: string;
-    rates: Array<{
-      OTA: string;
-      rate: {
-        lowest: number | null;
-        extracted_lowest: number | null;
-        before_tax_fees: number | null;
-        extracted_before_tax_fees: number | null;
-      };
-      check_in_date: Date | string | null;
-      check_out_date: Date | string | null;
-      currency: string | null;
-    }>;
-  }>();
+  const results = [];
 
   for (const doc of serpDatas) {
     const checkInDate =
@@ -132,53 +116,15 @@ export async function fetchSerpDataSummaries() {
     // ⬇ Only featured_prices
     const featuredPrices = doc.featured_prices || [];
 
-    // Initialize hotel entry if it doesn't exist
-    if (!hotelsMap.has(hotelName)) {
-      hotelsMap.set(hotelName, {
-        hotel_name: hotelName,
-        rates: [],
-      });
-    }
-
-    const hotelEntry = hotelsMap.get(hotelName)!;
-    
-    // Track added OTAs for this hotel/date combination to avoid duplicates
-    const added = new Set<string>();
-
-    // 1️⃣ Push all OTAs from featured_prices
-    for (const ota of featuredPrices) {
-      const source = ota.source || null;
-
-      if (!source || added.has(source)) continue;
-
-      added.add(source);
-
-      hotelEntry.rates.push({
-        OTA: source,
-        rate: {
-          lowest: ota.rate_per_night?.extracted_lowest ?? null,
-          extracted_lowest: ota.rate_per_night?.extracted_lowest ?? null,
-          before_tax_fees: ota.rate_per_night?.extracted_before_taxes_fees ?? null,
-          extracted_before_tax_fees: ota.rate_per_night?.extracted_before_taxes_fees ?? null,
-        },
-        check_in_date: checkInDate,
-        check_out_date: checkOutDate,
-        currency,
-      });
-    }
-
-    // 2️⃣ Ensure OTA whitelist exists in the output
+    // Only add OTAs that are in the whitelist
     for (const requiredOta of WHITELIST_OTAS) {
-      if (added.has(requiredOta)) continue;
-
-      // Try to find it in featuredPrices (maybe with different casing)
+      // Try to find it in featuredPrices (case-insensitive)
       const match = featuredPrices.find(
         p => p.source?.toLowerCase() === requiredOta.toLowerCase()
       );
 
       if (match) {
-        added.add(requiredOta);
-        hotelEntry.rates.push({
+        results.push({
           OTA: requiredOta,
           rate: {
             lowest: match.rate_per_night?.extracted_lowest ?? null,
@@ -188,14 +134,14 @@ export async function fetchSerpDataSummaries() {
           },
           check_in_date: checkInDate,
           check_out_date: checkOutDate,
+          hotel_name: hotelName,
           currency,
         });
       }
     }
   }
 
-  // Convert Map to array
-  return Array.from(hotelsMap.values());
+  return results;
 }
 
 
