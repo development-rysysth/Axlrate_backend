@@ -28,22 +28,33 @@ This project follows a microservices architecture with separation of concerns:
 
 ## Setup
 
-### 1. Install Dependencies
+### 1. Install pnpm (if not already installed)
 
 ```bash
-npm run install:all
+npm install -g pnpm
 ```
 
-Or install manually in each directory:
+Or using other methods:
 ```bash
-npm install
-cd services/api-gateway && npm install
-cd ../auth-service && npm install
-cd ../serpapi-service && npm install
-cd ../.. && cd shared && npm install
+# Using Homebrew (macOS)
+brew install pnpm
+
+# Using npm
+npm install -g pnpm
+
+# Using curl
+curl -fsSL https://get.pnpm.io/install.sh | sh -
 ```
 
-### 2. Configure Environment Variables
+### 2. Install Dependencies
+
+```bash
+pnpm install
+```
+
+This will install all dependencies for all workspaces (root, services, and shared) in one command thanks to pnpm workspaces.
+
+### 3. Configure Environment Variables
 
 Create a `.env` file in the root directory with the following variables:
 
@@ -80,12 +91,12 @@ SERP_API_KEY=1df98094870e92f06610b9973c259ad6ee4e00b031f30f736c39fe303b0e1952
 - The database name `axlrate` will be created automatically if it doesn't exist
 - SerpAPI key is already configured, but you can update it if needed
 
-### 3. Start Services
+### 4. Start Services
 
 #### Option 1: Start all services together (recommended for development)
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 This will start the API Gateway, Auth Service, and SerpAPI Service concurrently.
@@ -94,29 +105,34 @@ This will start the API Gateway, Auth Service, and SerpAPI Service concurrently.
 
 Terminal 1 - API Gateway:
 ```bash
-npm run dev:gateway
+pnpm run dev:gateway
 ```
 
 Terminal 2 - Auth Service:
 ```bash
-npm run dev:auth
+pnpm run dev:auth
 ```
 
 Terminal 3 - SerpAPI Service:
 ```bash
-npm run dev:serpapi
+pnpm run dev:serpapi
 ```
 
 #### Option 3: Start in production mode
 ```bash
-npm start
+pnpm start
 ```
 
 Or separately:
 ```bash
-npm run start:gateway
-npm run start:auth
-npm run start:serpapi
+pnpm run start:gateway
+pnpm run start:auth
+pnpm run start:serpapi
+```
+
+#### Build for production
+```bash
+pnpm run build
 ```
 
 ## API Endpoints
@@ -347,6 +363,8 @@ Axlrate_backend/
 │   ├── utils/             # JWT and password utilities
 │   └── validators/        # Request validators
 ├── .env.example           # Environment variables template
+├── .npmrc                 # pnpm configuration
+├── pnpm-workspace.yaml    # pnpm workspace configuration
 ├── package.json           # Root package.json
 └── README.md              # This file
 ```
@@ -393,9 +411,18 @@ This project uses **MongoDB** for data storage. The User model includes:
 
 ## Development
 
+- Uses `pnpm` workspaces for efficient dependency management
 - Uses `nodemon` for auto-reloading during development
 - Each service can be developed and deployed independently
 - Shared utilities ensure consistency across services
+
+### Package Manager
+
+This project uses **pnpm** for package management, which provides:
+- Faster installation times
+- Efficient disk space usage (shared dependencies)
+- Better monorepo support with workspaces
+- Stricter dependency resolution
 
 ## Next Steps
 
