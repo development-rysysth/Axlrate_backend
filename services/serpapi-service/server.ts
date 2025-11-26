@@ -58,7 +58,8 @@ app.get('/serpapi/fetch-rates', async (req: Request, res: Response) => {
       check_out_date,
       gl,
       hl,
-      currency
+      currency,
+      adults
     } = req.query;
 
     // Brief explanation for debugging/learning:
@@ -86,6 +87,19 @@ app.get('/serpapi/fetch-rates', async (req: Request, res: Response) => {
         error: 'Validation failed',
         details: ['Query parameter "check_out_date" is required (format: YYYY-MM-DD)'],
       });
+    }
+
+    // Validate adults if provided
+    let adultsCount = 2; // default
+    if (adults !== undefined) {
+      const parsedAdults = Number(adults);
+      if (isNaN(parsedAdults) || parsedAdults < 2 || parsedAdults > 5 || !Number.isInteger(parsedAdults)) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: ['adults must be an integer between 2 and 5 (default: 2)'],
+        });
+      }
+      adultsCount = parsedAdults;
     }
 
     // Convert query parameters to request body format (matching POST endpoint structure)
@@ -153,6 +167,7 @@ app.get('/serpapi/fetch-rates', async (req: Request, res: Response) => {
       gl: validatedGl,
       hl: validatedHl,
       currency: validatedCurrency,
+      adults: adultsCount,
     });
 
     // Log the raw rates data received from SerpAPI for debug
@@ -166,6 +181,7 @@ app.get('/serpapi/fetch-rates', async (req: Request, res: Response) => {
       gl: validatedGl || 'us',
       hl: validatedHl || 'en',
       currency: validatedCurrency || 'USD',
+      adults: adultsCount,
     });
 
     // Log the data as it will be stored in DB (if at all)
@@ -180,12 +196,32 @@ app.get('/serpapi/fetch-rates', async (req: Request, res: Response) => {
         'Type:', typeof transformedData.search_metadata?.total_time_taken
       );
 
-      // Look for existing entry by metadata.id or property_token
+      // Look for existing entry by hotel name, check-in date, check-out date, and adults
+      const checkInDateObj = new Date(formattedCheckIn);
+      const checkOutDateObj = new Date(formattedCheckOut);
+      const checkInStart = new Date(checkInDateObj);
+      checkInStart.setHours(0, 0, 0, 0);
+      const checkInEnd = new Date(checkInDateObj);
+      checkInEnd.setHours(23, 59, 59, 999);
+      const checkOutStart = new Date(checkOutDateObj);
+      checkOutStart.setHours(0, 0, 0, 0);
+      const checkOutEnd = new Date(checkOutDateObj);
+      checkOutEnd.setHours(23, 59, 59, 999);
+      
       const existingData = await SerpData.findOne({
         $or: [
-          { 'search_metadata.id': transformedData.search_metadata?.id },
           { property_token: transformedData.property_token },
+          { name: transformedData.name },
         ],
+        'search_parameters.check_in_date': {
+          $gte: checkInStart,
+          $lte: checkInEnd,
+        },
+        'search_parameters.check_out_date': {
+          $gte: checkOutStart,
+          $lte: checkOutEnd,
+        },
+        'search_parameters.adults': adultsCount,
       });
 
       if (existingData) {
@@ -263,7 +299,17 @@ app.post('/serpapi/fetch-rates', validateFetchRates, async (req: Request<{}, {},
       gl,
       hl,
       currency,
+      adults,
     } = req.body;
+
+    // Validate adults (default to 2, accept 2, 3, 4, 5)
+    const adultsCount = adults !== undefined ? Number(adults) : 2;
+    if (adults !== undefined && (isNaN(adultsCount) || adultsCount < 2 || adultsCount > 5 || !Number.isInteger(adultsCount))) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: ['adults must be an integer between 2 and 5 (default: 2)'],
+      });
+    }
 
     // Format hotel query
     const hotelQuery = formatHotelQuery(hotelName);
@@ -280,6 +326,7 @@ app.post('/serpapi/fetch-rates', validateFetchRates, async (req: Request<{}, {},
       gl,
       hl,
       currency,
+      adults: adultsCount,
     });
 
     // Transform SerpAPI response to SerpData format
@@ -290,6 +337,7 @@ app.post('/serpapi/fetch-rates', validateFetchRates, async (req: Request<{}, {},
       gl: gl || 'us',
       hl: hl || 'en',
       currency: currency || 'USD',
+      adults: adultsCount,
     });
 
     // Save to database
@@ -301,12 +349,32 @@ app.post('/serpapi/fetch-rates', validateFetchRates, async (req: Request<{}, {},
         'Type:', typeof transformedData.search_metadata?.total_time_taken
       );
 
-      // Check if data already exists (by search_metadata.id or property_token)
+      // Check if data already exists by hotel name, check-in date, check-out date, and adults
+      const checkInDateObj = new Date(formattedCheckIn);
+      const checkOutDateObj = new Date(formattedCheckOut);
+      const checkInStart = new Date(checkInDateObj);
+      checkInStart.setHours(0, 0, 0, 0);
+      const checkInEnd = new Date(checkInDateObj);
+      checkInEnd.setHours(23, 59, 59, 999);
+      const checkOutStart = new Date(checkOutDateObj);
+      checkOutStart.setHours(0, 0, 0, 0);
+      const checkOutEnd = new Date(checkOutDateObj);
+      checkOutEnd.setHours(23, 59, 59, 999);
+      
       const existingData = await SerpData.findOne({
         $or: [
-          { 'search_metadata.id': transformedData.search_metadata?.id },
           { property_token: transformedData.property_token },
+          { name: transformedData.name },
         ],
+        'search_parameters.check_in_date': {
+          $gte: checkInStart,
+          $lte: checkInEnd,
+        },
+        'search_parameters.check_out_date': {
+          $gte: checkOutStart,
+          $lte: checkOutEnd,
+        },
+        'search_parameters.adults': adultsCount,
       });
 
       if (existingData) {
@@ -392,22 +460,52 @@ app.get('/health', (_req: Request, res: Response) => {
  */
 app.post('/serpapi/batch-fetch-rates', async (req: Request, res: Response) => {
   try {
-    const { checkInDate } = req.body;
+    const { checkInDate, checkOutDate, adults } = req.body;
     const results: any[] = [];
 
-    const today = checkInDate ? new Date(checkInDate) : new Date();
-    if (checkInDate && isNaN(today.getTime())) {
+    // Validate checkInDate
+    if (!checkInDate) {
+      return res.status(400).json({ success: false, error: "checkInDate is required" });
+    }
+
+    const today = new Date(checkInDate);
+    if (isNaN(today.getTime())) {
       return res.status(400).json({ success: false, error: "Invalid checkInDate format" });
     }
 
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // Validate checkOutDate
+    if (!checkOutDate) {
+      return res.status(400).json({ success: false, error: "checkOutDate is required" });
+    }
+
+    const checkout = new Date(checkOutDate);
+    if (isNaN(checkout.getTime())) {
+      return res.status(400).json({ success: false, error: "Invalid checkOutDate format" });
+    }
+
+    // Validate that checkOutDate is after checkInDate
+    if (checkout <= today) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "checkOutDate must be after checkInDate" 
+      });
+    }
+
+    // Validate adults (default to 2, accept 2, 3, 4, 5)
+    const adultsCount = adults !== undefined ? Number(adults) : 2;
+    if (isNaN(adultsCount) || adultsCount < 2 || adultsCount > 5 || !Number.isInteger(adultsCount)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "adults must be an integer between 2 and 5 (default: 2)" 
+      });
+    }
 
     const todayStr = formatDate(today);
-    const tomorrowStr = formatDate(tomorrow);
+    const checkoutStr = formatDate(checkout);
 
     console.log(`\n[BATCH FETCH] Starting for ${hotels.length} hotels.`);
-    console.log(`[BATCH FETCH] Date range: ${todayStr} → ${tomorrowStr}`);
+    console.log(`[BATCH FETCH] Date range: ${todayStr} → ${checkoutStr}`);
+    console.log(`[BATCH FETCH] Adults: ${adultsCount}`);
 
     for (const hotel of hotels) {
       const hotelName = hotel.name;
@@ -420,19 +518,21 @@ app.post('/serpapi/batch-fetch-rates', async (req: Request, res: Response) => {
         const ratesData = await fetchHotelRates({
           hotelQuery,
           checkInDate: todayStr,
-          checkOutDate: tomorrowStr,
+          checkOutDate: checkoutStr,
           gl: 'us',
           hl: 'en',
-          currency: 'USD'
+          currency: 'USD',
+          adults: adultsCount
         });
 
         const transformed = transformSerpApiResponse(ratesData, {
           hotelQuery,
           checkInDate: todayStr,
-          checkOutDate: tomorrowStr,
+          checkOutDate: checkoutStr,
           gl: 'us',
           hl: 'en',
-          currency: 'USD'
+          currency: 'USD',
+          adults: adultsCount
         });
 
         let savedDoc = null;
@@ -441,18 +541,56 @@ app.post('/serpapi/batch-fetch-rates', async (req: Request, res: Response) => {
         //     SAVE TO DATABASE
         // ------------------------
        try {
-  savedDoc = await SerpData.create(transformed);
+  // Check if data already exists by hotel name, check-in date, check-out date, and adults
+  const checkInDateObj = new Date(todayStr);
+  const checkOutDateObj = new Date(checkoutStr);
+  const checkInStart = new Date(checkInDateObj);
+  checkInStart.setHours(0, 0, 0, 0);
+  const checkInEnd = new Date(checkInDateObj);
+  checkInEnd.setHours(23, 59, 59, 999);
+  const checkOutStart = new Date(checkOutDateObj);
+  checkOutStart.setHours(0, 0, 0, 0);
+  const checkOutEnd = new Date(checkOutDateObj);
+  checkOutEnd.setHours(23, 59, 59, 999);
+  
+  const existingData = await SerpData.findOne({
+    $or: [
+      { property_token: transformed.property_token },
+      { name: transformed.name },
+    ],
+    'search_parameters.check_in_date': {
+      $gte: checkInStart,
+      $lte: checkInEnd,
+    },
+    'search_parameters.check_out_date': {
+      $gte: checkOutStart,
+      $lte: checkOutEnd,
+    },
+    'search_parameters.adults': adultsCount,
+  });
 
-  console.log(
-    `[DB] Created new record for ${hotelName} (${todayStr} -> ${tomorrowStr})`
-  );
+  if (existingData) {
+    // Update existing record
+    Object.assign(existingData, transformed);
+    savedDoc = await existingData.save();
+    console.log(
+      `[DB] Updated existing record for ${hotelName} (${todayStr} -> ${checkoutStr})`
+    );
+  } else {
+    // Create new record
+    savedDoc = await SerpData.create(transformed);
+    console.log(
+      `[DB] Created new record for ${hotelName} (${todayStr} -> ${checkoutStr})`
+    );
+  }
 
   results.push({
     hotelName,
     checkIn: todayStr,
-    checkOut: tomorrowStr,
+    checkOut: checkoutStr,
     success: true,
-    databaseId: savedDoc?._id || null
+    databaseId: savedDoc?._id || null,
+    updated: !!existingData
   });
 
 } catch (dbError: any) {
@@ -465,7 +603,7 @@ app.post('/serpapi/batch-fetch-rates', async (req: Request, res: Response) => {
   results.push({
     hotelName,
     checkIn: todayStr,
-    checkOut: tomorrowStr,
+    checkOut: checkoutStr,
     success: false,
     error: dbError.message,
     fieldErrors: dbError.errors,
@@ -482,7 +620,7 @@ app.post('/serpapi/batch-fetch-rates', async (req: Request, res: Response) => {
         results.push({
           hotelName,
           checkIn: todayStr,
-          checkOut: tomorrowStr,
+          checkOut: checkoutStr,
           success: false,
           error: fetchError.message,
         });

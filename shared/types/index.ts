@@ -75,6 +75,7 @@ export interface FetchRatesRequestBody {
   gl?: string;
   hl?: string;
   currency?: string;
+  adults?: number;
 }
 
 // SerpAPI Fetch Parameters

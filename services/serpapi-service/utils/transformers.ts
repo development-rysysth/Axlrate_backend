@@ -64,7 +64,7 @@ export function transformSerpApiResponse(serpApiResponse: any, searchParams: any
       currency: searchParams.currency || 'USD',
       check_in_date: new Date(searchParams.checkInDate),
       check_out_date: new Date(searchParams.checkOutDate),
-      adults: safeNumber(serpApiResponse.search_parameters?.adults) ?? 2,
+      adults: safeNumber(searchParams.adults) ?? safeNumber(serpApiResponse.search_parameters?.adults) ?? 2,
       children: safeNumber(serpApiResponse.search_parameters?.children) ?? 0,
     },
 

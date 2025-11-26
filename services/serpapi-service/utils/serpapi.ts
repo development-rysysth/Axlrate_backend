@@ -10,6 +10,7 @@ export interface FetchHotelRatesParams {
   gl?: string;
   hl?: string;
   currency?: string;
+  adults?: number;
 }
 
 const SERP_API_KEY = process.env.SERP_API_KEY;
@@ -27,6 +28,7 @@ export async function fetchHotelRates({
   gl = 'us',
   hl = 'en',
   currency = 'USD',
+  adults = 2,
 }: FetchHotelRatesParams): Promise<unknown> {
   if (!SERP_API_KEY) {
     throw new Error('SERP_API_KEY is not configured');
@@ -40,6 +42,7 @@ export async function fetchHotelRates({
     currency,
     check_in_date: checkInDate,
     check_out_date: checkOutDate,
+    adults,
     api_key: SERP_API_KEY,
   };
 
@@ -113,6 +116,9 @@ export async function fetchSerpDataSummaries() {
     const currency =
       doc.currency ?? doc.search_parameters?.currency ?? null;
 
+    const adults =
+      doc.search_parameters?.adults ?? null;
+
     // ⬇ Only featured_prices
     const featuredPrices = doc.featured_prices || [];
 
@@ -120,7 +126,7 @@ export async function fetchSerpDataSummaries() {
     for (const requiredOta of WHITELIST_OTAS) {
       // Try to find it in featuredPrices (case-insensitive)
       const match = featuredPrices.find(
-        p => p.source?.toLowerCase() === requiredOta.toLowerCase()
+        (p: any) => p.source?.toLowerCase() === requiredOta.toLowerCase()
       );
 
       if (match) {
@@ -136,6 +142,7 @@ export async function fetchSerpDataSummaries() {
           check_out_date: checkOutDate,
           hotel_name: hotelName,
           currency,
+          adults,
         });
       }
     }
