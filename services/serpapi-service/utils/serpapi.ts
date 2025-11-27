@@ -131,6 +131,7 @@ export async function fetchSerpDataSummaries() {
 
       if (match) {
         results.push({
+          _id: doc._id,
           OTA: requiredOta,
           rate: {
             lowest: match.rate_per_night?.extracted_lowest ?? null,
