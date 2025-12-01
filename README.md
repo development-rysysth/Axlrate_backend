@@ -6,10 +6,24 @@ A Node.js and Express backend with microservices architecture, featuring authent
 
 This project follows a microservices architecture with separation of concerns:
 
-- **API Gateway** (`services/api-gateway`) - Entry point for all client requests, routes to appropriate services
+### Core Services
+- **API Gateway** (`services/api-gateway`) - Entry point for all client requests, routes to appropriate services with API versioning (`/api/v1/`)
 - **Auth Service** (`services/auth-service`) - Handles authentication (register, login, token refresh, logout) and user management
-- **SerpAPI Service** (`services/serpapi-service`) - Handles hotel rate searches via SerpAPI
+- **SerpAPI Service** (`services/serpapi-service`) - Fetches Google Hotel API data via SerpAPI
+
+### New Services (Skeletons)
+- **Ingest Service** (`services/ingest-service`) - Ingests and normalizes scraped data into PostgreSQL
+- **Aggregator Service** (`services/aggregator-service`) - Aggregates rates from multiple sources and provides analytics
+- **Export Service** (`services/export-service`) - Handles data export functionality (CSV, Excel, JSON)
+- **Scraper Orchestrator** (`services/scraper-orchestrator`) - Orchestrates Python OTA scrapers via RabbitMQ
+
+### Scrapers
+- **Python Scrapers** (`scrapers/`) - Selenium-based scrapers for Booking.com, Expedia, Agoda, Trip.com, and Airbnb
+
+### Shared Resources
 - **Shared** (`shared`) - Common utilities, middleware, and validators used across services
+- **Database Config** (`db/`) - Shared database connection utilities (MongoDB & PostgreSQL)
+- **Config** (`config/`) - Shared configuration files and Docker Compose setup
 
 ## Features
 
@@ -293,9 +307,9 @@ Note: You can update any field except `password` and `refreshTokens`. Password u
 
 ### SerpAPI Endpoints
 
-#### Fetch Hotel Rates
+#### Fetch Hotel Rates (New Versioned Endpoint)
 ```http
-POST /api/serpapi/fetch-rates
+POST /api/v1/serpapi/fetch-rates
 Content-Type: application/json
 
 {
@@ -304,9 +318,12 @@ Content-Type: application/json
   "checkOutDate": "2024-02-20",
   "gl": "us",
   "hl": "en",
-  "currency": "USD"
+  "currency": "USD",
+  "adults": 2
 }
 ```
+
+**Note**: Legacy endpoint `/api/serpapi/fetch-rates` still works for backward compatibility.
 
 **Request Parameters:**
 - `hotelName` (required): Name of the hotel to search for
@@ -345,29 +362,74 @@ Response:
 - API Gateway: `3000`
 - Auth Service: `3001`
 - SerpAPI Service: `3003`
+- Ingest Service: `3004`
+- Aggregator Service: `3005`
+- Export Service: `3006`
+- Scraper Orchestrator: `3007`
+
+## Infrastructure Services
+
+Start infrastructure services using Docker Compose:
+
+```bash
+cd config
+docker-compose up -d
+```
+
+This starts:
+- MongoDB (port 27017)
+- PostgreSQL (port 5432)
+- Redis (port 6379)
+- RabbitMQ (port 5672, Management UI: 15672)
 
 ## Project Structure
 
 ```
 Axlrate_backend/
+├── scrapers/              # Python OTA scrapers (Selenium)
+│   ├── booking/           # Booking.com scraper
+│   ├── expedia/           # Expedia scraper
+│   ├── agoda/             # Agoda scraper
+│   ├── trip/              # Trip.com scraper
+│   ├── airbnb/            # Airbnb scraper
+│   └── common/            # Shared scraper utilities
 ├── services/
 │   ├── api-gateway/       # API Gateway service
-│   ├── auth-service/      # Authentication and user management service
-│   │   ├── config/         # Database configuration
-│   │   └── models/         # Mongoose models
-│   └── serpapi-service/    # SerpAPI hotel rate search service
-│       ├── utils/          # Formatters and SerpAPI utilities
-│       └── validators/     # Request validators
-├── shared/                # Shared utilities and middleware
+│   │   └── src/
+│   │       ├── routes/v1/ # Versioned routes
+│   │       └── services/  # Proxy services
+│   ├── auth-service/      # Authentication service
+│   │   ├── src/
+│   │   │   ├── routes/v1/
+│   │   │   ├── controllers/
+│   │   │   └── repositories/
+│   │   └── models/        # Mongoose models
+│   ├── serpapi-service/   # SerpAPI service
+│   │   ├── src/
+│   │   │   ├── collectors/
+│   │   │   ├── transformers/
+│   │   │   └── repositories/
+│   │   └── models/
+│   ├── ingest-service/    # Data ingestion service
+│   ├── aggregator-service/# Rate aggregation service
+│   ├── export-service/     # Data export service
+│   └── scraper-orchestrator/# Scraper orchestration
+├── db/                    # Shared database configurations
+│   ├── mongodb/           # MongoDB connection & models
+│   └── postgres/          # PostgreSQL schemas & migrations
+├── config/                # Configuration files
+│   ├── docker-compose.yml # Infrastructure services
+│   └── env.example        # Environment variables template
+├── shared/                # Shared TypeScript utilities
 │   ├── middleware/        # Authentication middleware
 │   ├── utils/             # JWT and password utilities
 │   └── validators/        # Request validators
-├── .env.example           # Environment variables template
-├── .npmrc                 # pnpm configuration
-├── pnpm-workspace.yaml    # pnpm workspace configuration
-├── package.json           # Root package.json
+├── MIGRATION_GUIDE.md     # Migration guide for new structure
+├── RESTRUCTURE_PLAN.md    # Detailed architecture plan
 └── README.md              # This file
 ```
+
+**Note**: See `MIGRATION_GUIDE.md` for details on the new structure and migration steps.
 
 ## Database
 

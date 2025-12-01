@@ -7,3 +7,11 @@ build/
 coverage/
 .nyc_output/
 
+# pnpm
+.pnpm-store/
+.pnpm-debug.log*
+
+# Keep pnpm workspace structure but ignore service-level node_modules
+services/*/node_modules/
+shared/node_modules/
+
