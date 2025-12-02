@@ -1,3 +1,5 @@
+import otasConfig from './otas.json';
+
 export const hotels: {
     name: string;
 }[] = [
@@ -17,3 +19,5 @@ export const hotels: {
         name: "Quality Inn New London"
     }
 ]
+
+export const WHITELIST_OTAS: string[] = otasConfig.WHITELIST_OTAS;

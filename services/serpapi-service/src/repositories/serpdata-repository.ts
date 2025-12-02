@@ -1,5 +1,6 @@
 import SerpData from '../../models/SerpData';
 import { ISerpData } from '../../models/SerpData';
+import { WHITELIST_OTAS } from '../../../../shared';
 
 export class SerpDataRepository {
   async findOne(query: any) {
@@ -26,7 +27,6 @@ export class SerpDataRepository {
 
     if (!serpDatas || serpDatas.length === 0) return [];
 
-    const WHITELIST_OTAS = ["Booking.com", "Expedia.com", "Hotels.com", "Agoda"];
     const results = [];
 
     for (const doc of serpDatas as any) {
