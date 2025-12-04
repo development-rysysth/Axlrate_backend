@@ -1,9 +1,8 @@
 import { Request } from 'express';
-import { Document } from 'mongoose';
 
 // JWT Token Payload
 export interface TokenPayload {
-  id: string;
+  id: number;
   businessEmail: string;
 }
 
@@ -14,7 +13,7 @@ export interface AuthenticatedRequest extends Request {
 
 // Public User (without sensitive fields)
 export type PublicUser = {
-  _id: string;
+  id: number;
   name: string;
   businessEmail: string;
   country: string;
@@ -27,8 +26,9 @@ export type PublicUser = {
   updatedAt?: Date;
 };
 
-// User Document Interface
-export interface IUser extends Document {
+// User Interface (PostgreSQL)
+export interface User {
+  id: number;
   name: string;
   businessEmail: string;
   country: string;
@@ -39,8 +39,8 @@ export interface IUser extends Document {
   numberOfRooms: number;
   password: string;
   refreshTokens: string[];
-  comparePassword(candidatePassword: string): Promise<boolean>;
-  toJSON(): PublicUser;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 // Register Request Body

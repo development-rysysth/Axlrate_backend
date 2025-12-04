@@ -22,6 +22,7 @@ export interface CalendarDataItem {
   check_in_date: string;
   check_out_date: string;
   hotel_name: string;
+  room_name: string;
   currency: string;
   adults: number;
 }
@@ -43,10 +44,6 @@ export class CalendarRepository {
    * Logs the request and returns filtered data from PostgreSQL
    */
   async getCalendarData(filters: CalendarDataRequest): Promise<CalendarDataResponse> {
-    console.log('=== CALENDAR DATA REQUEST ===');
-    console.log('Filters received:', JSON.stringify(filters, null, 2));
-    console.log('=============================');
-
     try {
       // Validate month parameter
       if (!filters.month) {
@@ -60,8 +57,6 @@ export class CalendarRepository {
       
       const startDateStr = startDate.toISOString().split('T')[0];
       const endDateStr = endDate.toISOString().split('T')[0];
-
-      console.log(`Month ${filters.month} -> Date range: ${startDateStr} to ${endDateStr}`);
 
       // Build dynamic query based on filters
       const conditions: string[] = [];
@@ -134,12 +129,7 @@ export class CalendarRepository {
         LIMIT 1000;
       `;
 
-      console.log('Executing query:', query);
-      console.log('With values:', values);
-
       const result = await this.getPool().query(query, values);
-
-      console.log(`Found ${result.rows.length} results`);
 
       // Extract numeric values from price strings
       const extractPrice = (priceStr: string | null): number | null => {
@@ -186,6 +176,7 @@ export class CalendarRepository {
           check_in_date: row.checkin_date,
           check_out_date: row.checkout_date,
           hotel_name: row.hotel_name,
+          room_name: row.room_name,
           currency: extractCurrency(row.total_price),
           adults: getAdults(row.room_capacity),
         };
@@ -198,7 +189,6 @@ export class CalendarRepository {
         data: formattedData,
       };
     } catch (error) {
-      console.error('Error fetching calendar data:', error);
       throw error;
     }
   }
@@ -259,12 +249,7 @@ export class CalendarRepository {
         ORDER BY checkin_date, ota_platform;
       `;
 
-      console.log('Executing aggregated query:', query);
-      console.log('With values:', values);
-
       const result = await this.getPool().query(query, values);
-
-      console.log(`Found ${result.rows.length} aggregated results`);
 
       return {
         message: 'Aggregated calendar data fetched successfully',
@@ -273,7 +258,6 @@ export class CalendarRepository {
         data: result.rows,
       };
     } catch (error) {
-      console.error('Error fetching aggregated calendar data:', error);
       throw error;
     }
   }

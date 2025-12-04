@@ -6,7 +6,98 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
 
 const router = Router();
 
-// Auth routes
+// ========================================
+// AUTH SERVICE ROUTES
+// ========================================
+
+// Direct auth endpoints (register, login, logout, refresh)
+router.post('/register', createProxyMiddleware({
+  target: SERVICE_URLS.AUTH_SERVICE,
+  changeOrigin: true,
+  pathRewrite: { '^/api/v1/register': '/v1/register' },
+  logLevel: 'debug',
+  onProxyReq: (proxyReq, req) => {
+    console.log(`[PROXY] Forwarding ${req.method} to Auth: ${proxyReq.path}`);
+    forwardProxyBody(proxyReq, req);
+  },
+  onError: (err, req: Request, res: Response) => {
+    console.error('[PROXY ERROR] Auth Service:', err.message);
+    if (!res.headersSent) {
+      res.status(503).json({ error: 'Auth service unavailable', details: err.message });
+    }
+  },
+}));
+
+router.post('/login', createProxyMiddleware({
+  target: SERVICE_URLS.AUTH_SERVICE,
+  changeOrigin: true,
+  pathRewrite: { '^/api/v1/login': '/v1/login' },
+  logLevel: 'debug',
+  onProxyReq: (proxyReq, req) => {
+    console.log(`[PROXY] Forwarding ${req.method} to Auth: ${proxyReq.path}`);
+    forwardProxyBody(proxyReq, req);
+  },
+  onError: (err, req: Request, res: Response) => {
+    console.error('[PROXY ERROR] Auth Service:', err.message);
+    if (!res.headersSent) {
+      res.status(503).json({ error: 'Auth service unavailable', details: err.message });
+    }
+  },
+}));
+
+router.post('/logout', createProxyMiddleware({
+  target: SERVICE_URLS.AUTH_SERVICE,
+  changeOrigin: true,
+  pathRewrite: { '^/api/v1/logout': '/v1/logout' },
+  logLevel: 'debug',
+  onProxyReq: (proxyReq, req) => {
+    console.log(`[PROXY] Forwarding ${req.method} to Auth: ${proxyReq.path}`);
+    forwardProxyBody(proxyReq, req);
+  },
+  onError: (err, req: Request, res: Response) => {
+    console.error('[PROXY ERROR] Auth Service:', err.message);
+    if (!res.headersSent) {
+      res.status(503).json({ error: 'Auth service unavailable', details: err.message });
+    }
+  },
+}));
+
+router.post('/refresh', createProxyMiddleware({
+  target: SERVICE_URLS.AUTH_SERVICE,
+  changeOrigin: true,
+  pathRewrite: { '^/api/v1/refresh': '/v1/refresh' },
+  logLevel: 'debug',
+  onProxyReq: (proxyReq, req) => {
+    console.log(`[PROXY] Forwarding ${req.method} to Auth: ${proxyReq.path}`);
+    forwardProxyBody(proxyReq, req);
+  },
+  onError: (err, req: Request, res: Response) => {
+    console.error('[PROXY ERROR] Auth Service:', err.message);
+    if (!res.headersSent) {
+      res.status(503).json({ error: 'Auth service unavailable', details: err.message });
+    }
+  },
+}));
+
+// User management routes (requires authentication)
+router.use('/users', createProxyMiddleware({
+  target: SERVICE_URLS.AUTH_SERVICE,
+  changeOrigin: true,
+  pathRewrite: { '^/api/v1/users': '/v1/users' },
+  logLevel: 'debug',
+  onProxyReq: (proxyReq, req) => {
+    console.log(`[PROXY] Forwarding ${req.method} to Auth Users: ${proxyReq.path}`);
+    forwardProxyBody(proxyReq, req);
+  },
+  onError: (err, req: Request, res: Response) => {
+    console.error('[PROXY ERROR] Auth Service:', err.message);
+    if (!res.headersSent) {
+      res.status(503).json({ error: 'Auth service unavailable', details: err.message });
+    }
+  },
+}));
+
+// Legacy /auth/* routes (for backward compatibility)
 router.use(
   '/auth',
   createServiceProxy(
@@ -16,7 +107,10 @@ router.use(
   )
 );
 
-// SerpAPI routes
+// ========================================
+// SERPAPI SERVICE ROUTES
+// ========================================
+
 router.use(
   '/serpapi',
   createProxyMiddleware({
@@ -37,17 +131,21 @@ router.use(
   })
 );
 
+// ========================================
+// AGGREGATOR SERVICE ROUTES
+// ========================================
+
 // Calendar data
 router.use(
   '/calendar-data',
   createServiceProxy(
-    SERVICE_URLS.SERPAPI_SERVICE,
-    { '^/api/v1/calendar-data': '/v1/serpapi/calendar-data' },
-    'SerpAPI Service (Calendar)'
+    SERVICE_URLS.AGGREGATOR_SERVICE,
+    { '^/api/v1/calendar-data': '/v1/calendar-data' },
+    'Aggregator Service (Calendar)'
   )
 );
 
-// Aggregator routes (placeholder for future service)
+// Other aggregator routes
 router.use(
   '/aggregator',
   createServiceProxy(
@@ -57,7 +155,10 @@ router.use(
   )
 );
 
-// Export routes (placeholder for future service)
+// ========================================
+// EXPORT SERVICE ROUTES
+// ========================================
+
 router.use(
   '/export',
   createServiceProxy(

@@ -5,6 +5,7 @@
 -- CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Run individual schema files
+\i schema/users.sql
 \i schema/hotels.sql
 \i schema/rates.sql
 \i schema/ota_rates.sql

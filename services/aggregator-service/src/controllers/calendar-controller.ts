@@ -10,10 +10,6 @@ export class CalendarController {
     try {
       const filters: CalendarDataRequest = req.body;
       
-      console.log('=== CALENDAR DATA ENDPOINT CALLED ===');
-      console.log('Request Body:', JSON.stringify(filters, null, 2));
-      console.log('=====================================');
-      
       const calendarRepository = new CalendarRepository();
       const result = await calendarRepository.getCalendarData(filters);
       
@@ -22,7 +18,6 @@ export class CalendarController {
         data: result,
       });
     } catch (error: unknown) {
-      console.error('Calendar data error:', error);
       return res.status(500).json({
         success: false,
         error: 'Failed to fetch calendar data',
@@ -39,10 +34,6 @@ export class CalendarController {
     try {
       const filters: CalendarDataRequest = req.body;
       
-      console.log('=== AGGREGATED CALENDAR DATA ENDPOINT CALLED ===');
-      console.log('Request Body:', JSON.stringify(filters, null, 2));
-      console.log('===============================================');
-      
       const calendarRepository = new CalendarRepository();
       const result = await calendarRepository.getAggregatedCalendarData(filters);
       
@@ -51,7 +42,6 @@ export class CalendarController {
         data: result,
       });
     } catch (error: unknown) {
-      console.error('Aggregated calendar data error:', error);
       return res.status(500).json({
         success: false,
         error: 'Failed to fetch aggregated calendar data',

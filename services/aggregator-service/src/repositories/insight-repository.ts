@@ -31,7 +31,6 @@ export class InsightRepository {
       const result = await this.getPool().query(query);
       return result.rows.map(row => row.ota_platform);
     } catch (error) {
-      console.error('Error fetching OTAs:', error);
       return [];
     }
   }
@@ -64,7 +63,6 @@ export class InsightRepository {
       
       return uniqueGuests;
     } catch (error) {
-      console.error('Error fetching guests:', error);
       return [];
     }
   }
@@ -84,7 +82,6 @@ export class InsightRepository {
       const result = await this.getPool().query(query);
       return result.rows.map(row => row.room_name);
     } catch (error) {
-      console.error('Error fetching room types:', error);
       return [];
     }
   }
@@ -104,7 +101,6 @@ export class InsightRepository {
       const result = await this.getPool().query(query);
       return result.rows.map(row => parseInt(row.length_of_stay, 10));
     } catch (error) {
-      console.error('Error fetching LOS:', error);
       return [];
     }
   }
@@ -139,7 +135,6 @@ export class InsightRepository {
       // Convert boolean to string options
       return result.rows.map(row => String(row.breakfast_included));
     } catch (error) {
-      console.error('Error fetching meal types:', error);
       return [];
     }
   }
@@ -174,8 +169,6 @@ export class InsightRepository {
         if (result.status === 'fulfilled') {
           return result.value;
         } else {
-          const labels = ['OTAs', 'Devices', 'LOS', 'Guests', 'Room Types', 'Meal Types', 'Compsets'];
-          console.error(`Failed to fetch ${labels[index]}:`, result.reason);
           return [];
         }
       }

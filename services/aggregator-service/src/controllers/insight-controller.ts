@@ -16,7 +16,6 @@ export class InsightController {
         data: filterOptions,
       });
     } catch (error: unknown) {
-      console.error('Get filter options error:', error);
       return res.status(500).json({
         success: false,
         error: 'Failed to fetch filter options',

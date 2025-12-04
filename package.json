@@ -31,7 +31,9 @@
     "dev:all": "concurrently \"pnpm run dev:gateway\" \"pnpm run dev:auth\" \"pnpm run dev:serpapi\" \"pnpm run dev:ingest\" \"pnpm run dev:aggregator\" \"pnpm run dev:export\" \"pnpm run dev:orchestrator\"",
     "start": "concurrently \"pnpm run start:gateway\" \"pnpm run start:auth\" \"pnpm run start:serpapi\"",
     "start:all": "concurrently \"pnpm run start:gateway\" \"pnpm run start:auth\" \"pnpm run start:serpapi\" \"pnpm run start:ingest\" \"pnpm run start:aggregator\" \"pnpm run start:export\" \"pnpm run start:orchestrator\"",
-    "install:all": "pnpm install"
+    "install:all": "pnpm install",
+    "migration:run": "npx --yes tsx scripts/run-migration.ts",
+    "db:check": "npx --yes tsx scripts/check-database.ts"
   },
   "keywords": [
     "microservices",
