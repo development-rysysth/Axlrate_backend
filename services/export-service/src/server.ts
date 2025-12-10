@@ -1,5 +1,9 @@
 import dotenv from 'dotenv';
-dotenv.config({ path: '../../../.env' });
+import path from 'path';
+
+// Load .env from root directory only
+const rootEnvPath = path.resolve(__dirname, '../../../.env');
+dotenv.config({ path: rootEnvPath });
 
 import express, { Request, Response } from 'express';
 import cors from 'cors';

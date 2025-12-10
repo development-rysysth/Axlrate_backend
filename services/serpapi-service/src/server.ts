@@ -1,11 +1,9 @@
 import dotenv from 'dotenv';
 import path from 'path';
 
-// Try loading .env from root directory, fallback to config directory
+// Load .env from root directory only
 const rootEnvPath = path.resolve(__dirname, '../../../.env');
-const configEnvPath = path.resolve(__dirname, '../../../config/.env');
 dotenv.config({ path: rootEnvPath });
-dotenv.config({ path: configEnvPath }); // Fallback
 
 import express, { Request, Response } from 'express';
 import cors from 'cors';

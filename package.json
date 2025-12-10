@@ -27,12 +27,14 @@
     "dev:aggregator": "pnpm --filter @axlrate/aggregator-service dev",
     "dev:export": "pnpm --filter @axlrate/export-service dev",
     "dev:orchestrator": "pnpm --filter @axlrate/scraper-orchestrator dev",
-    "dev": "concurrently \"pnpm run dev:gateway\" \"pnpm run dev:auth\" \"pnpm run dev:serpapi\" \"pnpm run dev:aggregator\" ",
+    "dev": "concurrently \"pnpm run dev:gateway\" \"pnpm run dev:auth\" \"pnpm run dev:serpapi\" \"pnpm run dev:aggregator\"",
     "dev:all": "concurrently \"pnpm run dev:gateway\" \"pnpm run dev:auth\" \"pnpm run dev:serpapi\" \"pnpm run dev:ingest\" \"pnpm run dev:aggregator\" \"pnpm run dev:export\" \"pnpm run dev:orchestrator\"",
     "start": "concurrently \"pnpm run start:gateway\" \"pnpm run start:auth\" \"pnpm run start:serpapi\"",
     "start:all": "concurrently \"pnpm run start:gateway\" \"pnpm run start:auth\" \"pnpm run start:serpapi\" \"pnpm run start:ingest\" \"pnpm run start:aggregator\" \"pnpm run start:export\" \"pnpm run start:orchestrator\"",
     "install:all": "pnpm install",
     "migration:run": "npx --yes tsx scripts/run-migration.ts",
+    "migration:005": "npx --yes tsx scripts/run-migration-005.ts",
+    "migration:006": "npx --yes tsx scripts/run-migration-006.ts",
     "db:check": "npx --yes tsx scripts/check-database.ts"
   },
   "keywords": [

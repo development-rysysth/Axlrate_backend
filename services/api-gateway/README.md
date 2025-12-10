@@ -82,6 +82,7 @@ Returns available endpoints and API information.
     "calendarData": "/api/v1/calendar-data",
     "aggregator": "/api/v1/aggregator",
     "export": "/api/v1/export",
+    "hotelInfo": "/api/v1/hotel-info",
     "health": "/health"
   }
 }
@@ -114,6 +115,11 @@ All routes under `/api/v1/` are proxied to their respective services:
 
 #### Export (`/api/v1/export`)
 - All export routes → Export Service
+
+#### Hotel Info (`/api/v1/hotel-info`)
+- `GET /countries` → SerpAPI Service (Fetch all countries from database)
+- `GET /states?countryCode=US` → SerpAPI Service (Fetch states by country from database)
+- `POST /search-hotel` → SerpAPI Service (Search hotels using SerpAPI with country and state)
 
 ### Legacy Routes (Backward Compatibility)
 

@@ -59,18 +59,20 @@ export const createPostgresPool = (serviceName: string): Pool => {
   // If connecting through PgBouncer/Supabase pooler with pool_mode: session,
   // the connection string format should be used
   // Note: pool_mode is a PgBouncer server setting, not a client setting
+  const isSupabase = host.includes('supabase.com') || host.includes('supabase.co');
   const useConnectionString = process.env.POSTGRES_USE_CONNECTION_STRING === 'true' || 
                                process.env.POSTGRES_POOL_MODE === 'session' ||
                                host.includes('pooler.supabase.com') ||
-                               host.includes('pooler');
+                               host.includes('pooler') ||
+                               isSupabase;
   
   // Validate required fields
   if (!database || !user) {
     throw new Error(`[${serviceName}] PostgreSQL configuration error: POSTGRES_DB and POSTGRES_USER must be set`);
   }
   
-  // Validate password if using connection string (required for Supabase)
-  if (useConnectionString && !password) {
+  // Validate password only for Supabase connections (local PostgreSQL may not require password)
+  if (isSupabase && !password) {
     throw new Error(`[${serviceName}] PostgreSQL configuration error: POSTGRES_PASSWORD must be set for Supabase connection`);
   }
   

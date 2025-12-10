@@ -106,16 +106,30 @@ export class InsightRepository {
   }
 
   /**
-   * Get available devices from raw_data JSONB fields
-   * Looks for 'device', 'device_type', or 'platform' fields in raw_data
-   */
-  /**
-   * For now, always return ['desktop'].
-   * In the future, when a column named 'device' is available, return distinct device values instead.
+   * Get available devices from room_data table
+   * Currently returns ['desktop'] as default since device column is not yet available.
+   * When device column is added to room_data table, this will query distinct device values.
    */
   async getAvailableDevices(): Promise<string[]> {
-    // TODO: When 'device' column exists, return real distinct values
-    return ['desktop'];
+    try {
+      // Check if device column exists by attempting to query it
+      // If column doesn't exist, PostgreSQL will throw an error which we catch and return default
+      const query = `
+        SELECT DISTINCT device
+        FROM room_data
+        WHERE device IS NOT NULL AND device != ''
+        ORDER BY device;
+      `;
+      
+      const result = await this.getPool().query(query);
+      const devices = result.rows.map(row => row.device);
+      
+      // Return devices if found, otherwise return default
+      return devices.length > 0 ? devices : ['desktop'];
+    } catch (error) {
+      // Column doesn't exist yet, return default
+      return ['desktop'];
+    }
   }
 
   /**

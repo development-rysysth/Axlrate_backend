@@ -1,9 +1,9 @@
 import dotenv from 'dotenv';
 import path from 'path';
 
-// Load environment variables - try root .env first, then config/.env
-dotenv.config({ path: path.join(__dirname, '.env') });
-dotenv.config({ path: path.join(__dirname, 'config', '.env') }); // Fallback
+// Load environment variables from root .env only
+const rootEnvPath = path.resolve(__dirname, '.env');
+dotenv.config({ path: rootEnvPath });
 
 import { createPostgresPool } from './db/postgres/connection';
 

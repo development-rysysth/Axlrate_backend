@@ -22,7 +22,7 @@ This project follows a microservices architecture with separation of concerns:
 
 ### Shared Resources
 - **Shared** (`shared`) - Common utilities, middleware, and validators used across services
-- **Database Config** (`db/`) - Shared database connection utilities (MongoDB & PostgreSQL)
+- **Database Config** (`db/`) - Shared database connection utilities (PostgreSQL)
 - **Config** (`config/`) - Shared configuration files and Docker Compose setup
 
 ## Features
@@ -80,10 +80,12 @@ GATEWAY_PORT=3000
 AUTH_SERVICE_PORT=3001
 AUTH_SERVICE_URL=http://localhost:3001
 
-# MongoDB Connection
-# For local MongoDB: mongodb://localhost:27017/axlrate
-# For MongoDB Atlas: mongodb+srv://username:password@cluster.mongodb.net/axlrate?retryWrites=true&w=majority
-MONGODB_URI=mongodb://localhost:27017/axlrate
+# PostgreSQL Configuration
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=axlrate_db
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your_password
 
 # JWT Secrets (CHANGE THESE IN PRODUCTION!)
 ACCESS_TOKEN_SECRET=your-super-secret-access-token-key-change-this
@@ -96,14 +98,14 @@ REFRESH_TOKEN_EXPIRY=7d
 # SerpAPI Service
 SERPAPI_SERVICE_PORT=3003
 SERPAPI_SERVICE_URL=http://localhost:3003
-SERP_API_KEY=1df98094870e92f06610b9973c259ad6ee4e00b031f30f736c39fe303b0e1952
+SERP_API_KEY=apikey
 ```
 
 **Important Notes:**
-- Make sure MongoDB is running locally or update `MONGODB_URI` with your MongoDB Atlas connection string
+- Make sure PostgreSQL is running locally or update PostgreSQL connection settings
 - Change the JWT secrets in production
-- The database name `axlrate` will be created automatically if it doesn't exist
 - SerpAPI key is already configured, but you can update it if needed
+- Run database migrations before starting services: `pnpm run migration:run`
 
 ### 4. Start Services
 
@@ -377,7 +379,6 @@ docker-compose up -d
 ```
 
 This starts:
-- MongoDB (port 27017)
 - PostgreSQL (port 5432)
 - Redis (port 6379)
 - RabbitMQ (port 5672, Management UI: 15672)
@@ -403,7 +404,6 @@ Axlrate_backend/
 │   │   │   ├── routes/v1/
 │   │   │   ├── controllers/
 │   │   │   └── repositories/
-│   │   └── models/        # Mongoose models
 │   ├── serpapi-service/   # SerpAPI service
 │   │   ├── src/
 │   │   │   ├── collectors/
@@ -415,7 +415,6 @@ Axlrate_backend/
 │   ├── export-service/     # Data export service
 │   └── scraper-orchestrator/# Scraper orchestration
 ├── db/                    # Shared database configurations
-│   ├── mongodb/           # MongoDB connection & models
 │   └── postgres/          # PostgreSQL schemas & migrations
 ├── config/                # Configuration files
 │   ├── docker-compose.yml # Infrastructure services
@@ -433,39 +432,44 @@ Axlrate_backend/
 
 ## Database
 
-This project uses **MongoDB** for data storage. The User model includes:
+This project uses **PostgreSQL** for all data storage. The database includes:
 
-- **Basic Info**: Name, Business Email, Country
-- **Hotel Information**: Hotel Name
-- **Contact**: Phone Number
-- **Property Management**: Current PMS
-- **Business Type**: Independent Hotel, Chain Hotel, Hotel Management Company, or OTA's
-- **Inventory**: Number of Rooms
-- **Authentication**: Password (hashed), Refresh Tokens
+- **Users Table**: User accounts with authentication
+- **Hotels Table**: Hotel information and details
+- **Rates Table**: Rate data from SerpAPI
+- **OTA Rates Table**: Normalized OTA rate data
+- **SerpData Table**: Raw SerpAPI responses
+- **Location Tables**: Countries, states, cities
 
-### MongoDB Setup
+### PostgreSQL Setup
 
-1. **Local MongoDB**: Install MongoDB locally and ensure it's running
+1. **Local PostgreSQL**: Install PostgreSQL locally and ensure it's running
    ```bash
    # macOS
-   brew install mongodb-community
-   brew services start mongodb-community
+   brew install postgresql@14
+   brew services start postgresql@14
    ```
 
-2. **MongoDB Atlas** (Cloud): Create a free cluster at [mongodb.com/cloud/atlas](https://www.mongodb.com/cloud/atlas)
-   - Get your connection string
-   - Update `MONGODB_URI` in `.env`
+2. **PostgreSQL Configuration**: Update connection settings in `.env`
+   - `POSTGRES_HOST`: Database host (default: localhost)
+   - `POSTGRES_PORT`: Database port (default: 5432)
+   - `POSTGRES_DB`: Database name
+   - `POSTGRES_USER`: Database user
+   - `POSTGRES_PASSWORD`: Database password
 
-3. The database and collection will be created automatically on first use.
+3. **Run Migrations**: Create all tables by running migrations
+   ```bash
+   pnpm run migration:run
+   ```
 
 ## Security Notes
 
 1. **Change JWT Secrets**: Always change the default JWT secrets in production
 2. **Use HTTPS**: Always use HTTPS in production
-3. **MongoDB Security**: 
-   - Use strong passwords for MongoDB
-   - Enable authentication in production
-   - Use MongoDB Atlas IP whitelist for cloud deployments
+3. **PostgreSQL Security**: 
+   - Use strong passwords for PostgreSQL
+   - Enable SSL connections in production
+   - Restrict database access to application servers only
 4. **Token Storage**: Refresh tokens are stored in the database for better security
 5. **Rate Limiting**: Add rate limiting to prevent brute force attacks
 6. **CORS**: Configure CORS properly for your frontend domain
@@ -488,7 +492,7 @@ This project uses **pnpm** for package management, which provides:
 
 ## Next Steps
 
-- [ ] Add database integration (MongoDB/PostgreSQL)
+- [x] Database integration (PostgreSQL)
 - [ ] Implement token blacklisting
 - [ ] Add rate limiting
 - [ ] Add request logging

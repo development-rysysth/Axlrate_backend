@@ -1,7 +1,7 @@
 -- OTA Rates table schema (for scraped data from OTAs)
 CREATE TABLE IF NOT EXISTS ota_rates (
     id SERIAL PRIMARY KEY,
-    hotel_id INTEGER REFERENCES hotels(id) ON DELETE CASCADE,
+    hotel_id VARCHAR(100) REFERENCES hotels(hotel_id) ON DELETE CASCADE,
     ota_name VARCHAR(50) NOT NULL, -- 'booking', 'expedia', 'agoda', etc.
     room_name VARCHAR(255),
     check_in_date DATE NOT NULL,

@@ -1,7 +1,7 @@
 -- Rates table schema
 CREATE TABLE IF NOT EXISTS rates (
     id SERIAL PRIMARY KEY,
-    hotel_id INTEGER REFERENCES hotels(id) ON DELETE CASCADE,
+    hotel_id VARCHAR(100) REFERENCES hotels(hotel_id) ON DELETE CASCADE,
     source VARCHAR(100) NOT NULL, -- 'serpapi', 'booking', 'expedia', etc.
     check_in_date DATE NOT NULL,
     check_out_date DATE NOT NULL,

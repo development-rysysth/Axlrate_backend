@@ -1,4 +1,4 @@
-import { ISerpData } from '../../models/SerpData';
+import { ISerpData } from '../types/serpdata';
 
 /**
  * Helper function to extract numeric value from SerpAPI response

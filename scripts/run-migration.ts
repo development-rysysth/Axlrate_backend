@@ -3,8 +3,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
 
-// Load environment variables
-dotenv.config();
+// Load environment variables from root .env only
+const rootEnvPath = path.resolve(__dirname, '../.env');
+dotenv.config({ path: rootEnvPath });
 
 const pool = new Pool({
   host: process.env.POSTGRES_HOST,

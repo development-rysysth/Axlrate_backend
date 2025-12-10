@@ -1,8 +1,10 @@
 import { Pool } from 'pg';
 import * as dotenv from 'dotenv';
+import * as path from 'path';
 
-// Load environment variables
-dotenv.config();
+// Load environment variables from root .env only
+const rootEnvPath = path.resolve(__dirname, '../.env');
+dotenv.config({ path: rootEnvPath });
 
 const pool = new Pool({
   host: process.env.POSTGRES_HOST,

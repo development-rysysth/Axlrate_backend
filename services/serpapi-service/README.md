@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **SerpAPI Service** integrates with the SerpAPI (Search Engine Results Page API) to fetch real-time hotel rate data from various Online Travel Agencies (OTAs). It acts as the primary data collection layer that gathers hotel pricing information from Google Hotels search results and stores it in MongoDB for further processing.
+The **SerpAPI Service** integrates with the SerpAPI (Search Engine Results Page API) to fetch real-time hotel rate data from various Online Travel Agencies (OTAs). It acts as the primary data collection layer that gathers hotel pricing information from Google Hotels search results and stores it in PostgreSQL for further processing.
 
 ## What It Does
 
@@ -11,7 +11,7 @@ The SerpAPI Service handles:
 - **Rate Fetching**: Retrieves hotel rates from Google Hotels via SerpAPI
 - **Batch Processing**: Supports bulk rate fetching for multiple hotels/dates
 - **Data Transformation**: Converts SerpAPI responses into normalized formats
-- **Data Storage**: Stores raw and transformed data in MongoDB
+- **Data Storage**: Stores raw and transformed data in PostgreSQL
 - **Calendar Data**: Provides calendar view of fetched rates
 - **Request Validation**: Validates search parameters before API calls
 - **Error Handling**: Manages API rate limits and errors
@@ -23,7 +23,7 @@ The SerpAPI Service handles:
 ```
 Client → API Gateway → SerpAPI Service → SerpAPI (Google Hotels)
                             ↓
-                        MongoDB (serpdata collection)
+                        PostgreSQL (serpdata table)
 ```
 
 ### Data Flow
@@ -32,7 +32,7 @@ Client → API Gateway → SerpAPI Service → SerpAPI (Google Hotels)
 2. **Validate parameters** using Joi schemas
 3. **Call SerpAPI** with formatted query
 4. **Transform response** to standardized format
-5. **Store in MongoDB** for historical tracking
+5. **Store in PostgreSQL** for historical tracking
 6. **Return formatted data** to client
 
 ### SerpAPI Integration
@@ -218,7 +218,7 @@ Check service health and SerpAPI key status.
 
 ## Data Models
 
-### MongoDB Schema (SerpData)
+### PostgreSQL Schema (SerpData)
 
 ```typescript
 {
@@ -258,8 +258,8 @@ Check service health and SerpAPI key status.
 
 - **Express.js**: Web framework
 - **TypeScript**: Type-safe JavaScript
-- **MongoDB**: NoSQL database for storing API responses
-- **Mongoose**: MongoDB ODM
+- **PostgreSQL**: Relational database for storing API responses
+- **pg**: PostgreSQL client library
 - **Axios**: HTTP client for SerpAPI calls
 - **Joi**: Request validation
 - **date-fns**: Date manipulation
@@ -276,8 +276,12 @@ SERPAPI_SERVICE_PORT=3003
 SERP_API_KEY=your_serpapi_key_here
 SERP_API_BASE_URL=https://serpapi.com
 
-# MongoDB Configuration
-MONGO_URI=mongodb://localhost:27017/axlrate
+# PostgreSQL Configuration
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=axlrate_db
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your_password
 MONGO_DB_NAME=axlrate
 
 # Rate Limiting
@@ -320,7 +324,7 @@ The service will start on port `3003` (or the port specified in `SERPAPI_SERVICE
 - `cors`: ^2.8.5
 - `dotenv`: ^16.3.1
 - `axios`: ^1.6.2
-- `mongoose`: ^8.0.3
+- `pg`: ^8.11.3
 - `joi`: ^17.11.0
 - `date-fns`: ^3.0.6
 
@@ -342,7 +346,7 @@ Single service for all SerpAPI interactions, separating external API concerns fr
 Transforms SerpAPI's complex responses into consistent, usable formats.
 
 ### 4. **Historical Tracking**
-Stores all fetched data in MongoDB for historical analysis and trend tracking.
+Stores all fetched data in PostgreSQL for historical analysis and trend tracking.
 
 ### 5. **Batch Processing**
 Efficiently fetch rates for multiple hotels/dates, reducing API calls and latency.

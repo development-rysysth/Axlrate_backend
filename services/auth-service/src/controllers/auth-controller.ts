@@ -7,10 +7,164 @@ import {
   User
 } from '../../../../shared';
 import { UserRepository } from '../repositories/user-repository';
+import { HotelRepository } from '../repositories/hotel-repository';
 import { JwtService } from '../services/jwt-service';
 import { comparePassword } from '../../../../shared/utils/password';
+import { fetchHotelRates, searchHotelWithLocation } from '../../../serpapi-service/src/collectors/serpapi-collector';
+import { transformSerpApiResponse } from '../../../serpapi-service/src/transformers/serpapi-transformer';
+import { SerpDataRepository } from '../../../serpapi-service/src/repositories/serpdata-repository';
+import { formatHotelQuery, formatDate } from '../../../serpapi-service/src/utils/formatters';
+import { mapSerpApiToHotel } from '../../../serpapi-service/src/utils/hotel-mapper';
 
 const userRepository = new UserRepository();
+const hotelRepository = new HotelRepository();
+const serpDataRepository = new SerpDataRepository();
+
+// Helper function to create date range for database queries
+function createDateRange(checkInDate: string, checkOutDate: string) {
+  const checkInDateObj = new Date(checkInDate);
+  const checkOutDateObj = new Date(checkOutDate);
+  
+  const checkInStart = new Date(checkInDateObj);
+  checkInStart.setHours(0, 0, 0, 0);
+  
+  const checkInEnd = new Date(checkInDateObj);
+  checkInEnd.setHours(23, 59, 59, 999);
+  
+  const checkOutStart = new Date(checkOutDateObj);
+  checkOutStart.setHours(0, 0, 0, 0);
+  
+  const checkOutEnd = new Date(checkOutDateObj);
+  checkOutEnd.setHours(23, 59, 59, 999);
+  
+  return { checkInStart, checkInEnd, checkOutStart, checkOutEnd };
+}
+
+// Helper function to build query for finding existing SerpData
+function buildSerpDataQuery(
+  transformedData: any,
+  checkInStart: Date,
+  checkInEnd: Date,
+  checkOutStart: Date,
+  checkOutEnd: Date,
+  adultsCount: number
+) {
+  return {
+    $or: [
+      { property_token: transformedData.property_token },
+      { name: transformedData.name },
+    ],
+    'search_parameters.check_in_date': {
+      $gte: checkInStart,
+      $lte: checkInEnd,
+    },
+    'search_parameters.check_out_date': {
+      $gte: checkOutStart,
+      $lte: checkOutEnd,
+    },
+    'search_parameters.adults': adultsCount,
+  };
+}
+
+// Helper function to save SerpData to database
+async function saveSerpDataToDatabase(
+  transformedData: any,
+  checkInDate: string,
+  checkOutDate: string,
+  adultsCount: number
+): Promise<void> {
+  try {
+    const { checkInStart, checkInEnd, checkOutStart, checkOutEnd } = createDateRange(checkInDate, checkOutDate);
+    const query = buildSerpDataQuery(transformedData, checkInStart, checkInEnd, checkOutStart, checkOutEnd, adultsCount);
+    
+    const existingData = await serpDataRepository.findOne(query);
+
+    if (existingData) {
+      await serpDataRepository.findAndUpdate(query, transformedData);
+      console.log('SERP API data updated in database');
+    } else {
+      await serpDataRepository.create(transformedData);
+      console.log('SERP API data saved to database');
+    }
+  } catch (dbError: unknown) {
+    const errorMessage = dbError instanceof Error ? dbError.message : 'Unknown error';
+    console.log(`Failed to save SERP API data: ${errorMessage}`);
+  }
+}
+
+// Async function to search hotel via SERP API and update hotel record
+async function searchAndUpdateHotelDetails(hotelName: string, hotelId: string, countryCode?: string, stateName?: string): Promise<void> {
+  try {
+    console.log('Now getting more details');
+    
+    // Use default dates (today + 7 days)
+    const checkInDate = new Date();
+    checkInDate.setDate(checkInDate.getDate() + 1);
+    const checkOutDate = new Date(checkInDate);
+    checkOutDate.setDate(checkOutDate.getDate() + 7);
+
+    const formattedCheckIn = formatDate(checkInDate.toISOString().split('T')[0]);
+    const formattedCheckOut = formatDate(checkOutDate.toISOString().split('T')[0]);
+
+    let ratesData: any;
+    let hotelQuery: string;
+
+    // Use searchHotelWithLocation if we have country and state, otherwise use fetchHotelRates
+    if (countryCode && stateName) {
+      ratesData = await searchHotelWithLocation({
+        hotelName,
+        countryCode,
+        stateName,
+        checkInDate: formattedCheckIn,
+        checkOutDate: formattedCheckOut,
+        hl: 'en',
+        currency: 'USD',
+        adults: 2,
+      });
+      hotelQuery = `${hotelName} ${stateName}`;
+    } else {
+      hotelQuery = formatHotelQuery(hotelName);
+      ratesData = await fetchHotelRates({
+        hotelQuery,
+        checkInDate: formattedCheckIn,
+        checkOutDate: formattedCheckOut,
+        gl: countryCode?.toLowerCase() || 'us',
+        hl: 'en',
+        currency: 'USD',
+        adults: 2,
+      });
+    }
+
+    // Transform response
+    const transformedData = transformSerpApiResponse(ratesData, {
+      hotelQuery,
+      checkInDate: formattedCheckIn,
+      checkOutDate: formattedCheckOut,
+      gl: countryCode?.toLowerCase() || 'us',
+      hl: 'en',
+      currency: 'USD',
+      adults: 2,
+    });
+
+    // Save to serpdata table
+    await saveSerpDataToDatabase(transformedData, formattedCheckIn, formattedCheckOut, 2);
+
+    // Update hotel record with SERP API data if available
+    if (transformedData.name) {
+      // Update hotel in database using hotel repository create method with existingHotelId
+      // The create method uses ON CONFLICT UPDATE, so this will update the existing hotel
+      await hotelRepository.create({
+        name: transformedData.name || '',
+        serpApiData: transformedData,
+        existingHotelId: hotelId,
+      });
+      console.log('Hotel record updated with SERP API data');
+    }
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.log(`Background SERP API search failed: ${errorMessage}`);
+  }
+}
 
 // Helper function to exclude sensitive fields from user object
 const sanitizeUser = (user: User) => {
@@ -21,6 +175,8 @@ const sanitizeUser = (user: User) => {
 export class AuthController {
   async register(req: Request<{}, {}, RegisterRequestBody>, res: Response) {
     try {
+      console.log('Received frontend user registration request');
+
       const {
         name,
         businessEmail,
@@ -29,8 +185,8 @@ export class AuthController {
         phoneNumber,
         currentPMS,
         businessType,
-        numberOfRooms,
         password,
+        selectedHotel,
       } = req.body;
 
       // Check if user already exists
@@ -42,6 +198,88 @@ export class AuthController {
         });
       }
 
+      // Handle hotel registration/mapping
+      let hotelId: string | undefined = undefined;
+      
+      if (selectedHotel && selectedHotel.gps_coordinates) {
+        console.log('Searching hotel');
+        
+        const { 
+          name: hotelNameFromSelection, 
+          gps_coordinates,
+          hotel_class
+        } = selectedHotel;
+        const { latitude, longitude } = gps_coordinates;
+
+        // Validate coordinates are valid numbers
+        if (typeof latitude !== 'number' || typeof longitude !== 'number' || 
+            isNaN(latitude) || isNaN(longitude)) {
+          return res.status(400).json({ 
+            error: 'Invalid GPS coordinates: latitude and longitude must be valid numbers',
+            code: 'INVALID_COORDINATES'
+          });
+        }
+
+        // Generate hotel ID first (deterministic based on name + coordinates)
+        const generatedHotelId = hotelRepository.generateHotelId(
+          hotelNameFromSelection,
+          latitude,
+          longitude
+        );
+
+        // Check if hotel with this ID already exists
+        try {
+          const existingHotel = await hotelRepository.findByHotelId(generatedHotelId);
+
+          if (existingHotel) {
+            hotelId = existingHotel.hotelId;
+            console.log('Hotel found');
+          } else {
+            console.log('Hotel not found');
+            // Create new hotel with static values only (not using serpApiData)
+            try {
+              const newHotel = await hotelRepository.create({
+                name: hotelNameFromSelection,
+                gpsLatitude: latitude,
+                gpsLongitude: longitude,
+                hotelClass: hotel_class,
+              });
+              hotelId = newHotel.hotelId;
+              console.log('Register hotel');
+            } catch (hotelError: unknown) {
+              // Handle unique constraint violation (race condition)
+              if (hotelError && typeof hotelError === 'object' && 'code' in hotelError && hotelError.code === '23505') {
+                // Hotel was created by another request, try to find it by ID
+                const foundHotel = await hotelRepository.findByHotelId(generatedHotelId);
+                if (foundHotel) {
+                  hotelId = foundHotel.hotelId;
+                } else {
+                  return res.status(500).json({
+                    error: 'Failed to register hotel',
+                    message: 'Hotel registration failed due to a database constraint violation. Please try again.',
+                    code: 'HOTEL_REGISTRATION_FAILED'
+                  });
+                }
+              } else {
+                const errorMessage = hotelError instanceof Error ? hotelError.message : 'Unknown error occurred';
+                return res.status(500).json({
+                  error: 'Failed to register hotel',
+                  message: `Hotel registration failed: ${errorMessage}. Please check the hotel data and try again.`,
+                  code: 'HOTEL_REGISTRATION_FAILED'
+                });
+              }
+            }
+          }
+        } catch (hotelError: unknown) {
+          const errorMessage = hotelError instanceof Error ? hotelError.message : 'Unknown error occurred';
+          return res.status(500).json({
+            error: 'Failed to register hotel',
+            message: `Hotel registration failed: ${errorMessage}. Please check the hotel data and try again.`,
+            code: 'HOTEL_REGISTRATION_FAILED'
+          });
+        }
+      }
+
       // Create user (password will be hashed in repository)
       const user = await userRepository.create({
         name,
@@ -51,8 +289,8 @@ export class AuthController {
         phoneNumber,
         currentPMS,
         businessType,
-        numberOfRooms,
         password,
+        hotelId,
       });
 
       // Generate tokens
@@ -62,6 +300,15 @@ export class AuthController {
       // Store refresh token
       await userRepository.addRefreshToken(user.id, tokens.refreshToken);
 
+      // Fire off parallel async SERP API search (don't wait for it)
+      if (hotelId && selectedHotel) {
+        const { name: hotelNameFromSelection } = selectedHotel;
+        searchAndUpdateHotelDetails(hotelNameFromSelection, hotelId, country, req.body.state).catch((error) => {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          console.log(`Background SERP API search error: ${errorMessage}`);
+        });
+      }
+
       // Return user data (exclude sensitive fields)
       return res.status(201).json({
         message: 'User registered successfully',
@@ -69,7 +316,6 @@ export class AuthController {
         tokens,
       });
     } catch (error: unknown) {
-      
       // Handle PostgreSQL errors
       if (error && typeof error === 'object' && 'code' in error) {
         // Table does not exist
@@ -106,9 +352,14 @@ export class AuthController {
         }
       }
       
+      // Include error details in development mode
+      const isDevelopment = process.env.NODE_ENV !== 'production';
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
       return res.status(500).json({ 
         error: 'Internal server error',
-        code: 'INTERNAL_ERROR'
+        code: 'INTERNAL_ERROR',
+        ...(isDevelopment && { details: errorMessage })
       });
     }
   }

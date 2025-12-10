@@ -168,5 +168,29 @@ router.use(
   )
 );
 
+// ========================================
+// HOTEL INFO SERVICE ROUTES (now handled by SerpAPI Service)
+// ========================================
+
+router.use(
+  '/hotel-info',
+  createProxyMiddleware({
+    target: SERVICE_URLS.SERPAPI_SERVICE,
+    changeOrigin: true,
+    pathRewrite: { '^/api/v1/hotel-info': '/v1/serpapi' },
+    logLevel: 'debug',
+    onProxyReq: (proxyReq, req: any) => {
+      console.log(`[PROXY] Forwarding ${req.method} to SerpAPI (hotel-info): ${proxyReq.path}`);
+      forwardProxyBody(proxyReq, req);
+    },
+    onError: (err, req: Request, res: Response) => {
+      console.error('[PROXY ERROR] SerpAPI (hotel-info):', err.message);
+      if (!res.headersSent) {
+        res.status(503).json({ error: 'SerpAPI service unavailable', details: err.message });
+      }
+    },
+  })
+);
+
 export default router;
 

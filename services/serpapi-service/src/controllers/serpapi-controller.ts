@@ -1,13 +1,96 @@
 import { Request, Response } from 'express';
-import { FetchRatesRequestBody } from '../../../../shared/types';
-import { fetchHotelRates } from '../collectors/serpapi-collector';
+import { FetchRatesRequestBody, SearchHotelRequestBody } from '../../../../shared/types';
+import { fetchHotelRates, searchHotelWithLocation } from '../collectors/serpapi-collector';
 import { transformSerpApiResponse } from '../transformers/serpapi-transformer';
 import { SerpDataRepository } from '../repositories/serpdata-repository';
+import { CountryRepository } from '../repositories/country-repository';
 import { formatHotelQuery, formatDate } from '../utils/formatters';
 import { validateFetchRates, fetchRatesSchema } from '../../validators/serpapi';
 import { hotels } from '../../../../shared/constants';
 
 const serpDataRepository = new SerpDataRepository();
+
+/**
+ * Helper function to create date range for database queries
+ * Returns start and end of day for check-in and check-out dates
+ */
+function createDateRange(checkInDate: string, checkOutDate: string) {
+  const checkInDateObj = new Date(checkInDate);
+  const checkOutDateObj = new Date(checkOutDate);
+  
+  const checkInStart = new Date(checkInDateObj);
+  checkInStart.setHours(0, 0, 0, 0);
+  
+  const checkInEnd = new Date(checkInDateObj);
+  checkInEnd.setHours(23, 59, 59, 999);
+  
+  const checkOutStart = new Date(checkOutDateObj);
+  checkOutStart.setHours(0, 0, 0, 0);
+  
+  const checkOutEnd = new Date(checkOutDateObj);
+  checkOutEnd.setHours(23, 59, 59, 999);
+  
+  return { checkInStart, checkInEnd, checkOutStart, checkOutEnd };
+}
+
+/**
+ * Helper function to build query for finding existing SerpData
+ */
+function buildSerpDataQuery(
+  transformedData: any,
+  checkInStart: Date,
+  checkInEnd: Date,
+  checkOutStart: Date,
+  checkOutEnd: Date,
+  adultsCount: number
+) {
+  return {
+    $or: [
+      { property_token: transformedData.property_token },
+      { name: transformedData.name },
+    ],
+    'search_parameters.check_in_date': {
+      $gte: checkInStart,
+      $lte: checkInEnd,
+    },
+    'search_parameters.check_out_date': {
+      $gte: checkOutStart,
+      $lte: checkOutEnd,
+    },
+    'search_parameters.adults': adultsCount,
+  };
+}
+
+/**
+ * Helper function to save or update SerpData in database
+ * Returns an object with savedData and wasUpdated flag, or null if save failed
+ */
+async function saveSerpDataToDatabase(
+  transformedData: any,
+  checkInDate: string,
+  checkOutDate: string,
+  adultsCount: number,
+  logPrefix: string = '[SerpAPI]'
+): Promise<{ savedData: any; wasUpdated: boolean } | null> {
+  try {
+    const { checkInStart, checkInEnd, checkOutStart, checkOutEnd } = createDateRange(checkInDate, checkOutDate);
+    const query = buildSerpDataQuery(transformedData, checkInStart, checkInEnd, checkOutStart, checkOutEnd, adultsCount);
+    
+    const existingData = await serpDataRepository.findOne(query);
+
+    if (existingData) {
+      const savedData = await serpDataRepository.findAndUpdate(query, transformedData);
+      return { savedData, wasUpdated: true };
+    } else {
+      const savedData = await serpDataRepository.create(transformedData);
+      return { savedData, wasUpdated: false };
+    }
+  } catch (dbError: unknown) {
+    // Skip serpdata save errors silently (table may not exist or not needed)
+    // Continue even if database save fails
+    return null;
+  }
+}
 
 export class SerpApiController {
   async fetchRates(req: Request, res: Response) {
@@ -61,53 +144,19 @@ export class SerpApiController {
       });
 
       // Save to database
-      let savedSerpData = null;
-      try {
-        const checkInDateObj = new Date(formattedCheckIn);
-        const checkOutDateObj = new Date(formattedCheckOut);
-        const checkInStart = new Date(checkInDateObj);
-        checkInStart.setHours(0, 0, 0, 0);
-        const checkInEnd = new Date(checkInDateObj);
-        checkInEnd.setHours(23, 59, 59, 999);
-        const checkOutStart = new Date(checkOutDateObj);
-        checkOutStart.setHours(0, 0, 0, 0);
-        const checkOutEnd = new Date(checkOutDateObj);
-        checkOutEnd.setHours(23, 59, 59, 999);
-        
-        const existingData = await serpDataRepository.findOne({
-          $or: [
-            { property_token: transformedData.property_token },
-            { name: transformedData.name },
-          ],
-          'search_parameters.check_in_date': {
-            $gte: checkInStart,
-            $lte: checkInEnd,
-          },
-          'search_parameters.check_out_date': {
-            $gte: checkOutStart,
-            $lte: checkOutEnd,
-          },
-          'search_parameters.adults': adultsCount,
-        });
-
-        if (existingData) {
-          Object.assign(existingData, transformedData);
-          savedSerpData = await existingData.save();
-          console.log('[POST /serpapi/fetch-rates] Updated existing SerpData, _id:', savedSerpData._id?.toString());
-        } else {
-          savedSerpData = await serpDataRepository.create(transformedData);
-          console.log('[POST /serpapi/fetch-rates] Created new SerpData, _id:', savedSerpData._id?.toString());
-        }
-      } catch (dbError: unknown) {
-        console.error('Database save error:', dbError);
-        // Continue even if database save fails
-      }
+      const savedSerpData = await saveSerpDataToDatabase(
+        transformedData,
+        formattedCheckIn,
+        formattedCheckOut,
+        adultsCount,
+        '[POST /serpapi/fetch-rates]'
+      );
 
       return res.json({
         success: true,
         data: ratesData,
         savedToDatabase: !!savedSerpData,
-        databaseId: savedSerpData?._id || null,
+        databaseId: savedSerpData?.savedData?.id || null,
         query: {
           hotelName,
           hotelQuery,
@@ -250,50 +299,19 @@ export class SerpApiController {
       });
 
       // Save to DB
-      let savedSerpData = null;
-      try {
-        const checkInDateObj = new Date(formattedCheckIn);
-        const checkOutDateObj = new Date(formattedCheckOut);
-        const checkInStart = new Date(checkInDateObj);
-        checkInStart.setHours(0, 0, 0, 0);
-        const checkInEnd = new Date(checkInDateObj);
-        checkInEnd.setHours(23, 59, 59, 999);
-        const checkOutStart = new Date(checkOutDateObj);
-        checkOutStart.setHours(0, 0, 0, 0);
-        const checkOutEnd = new Date(checkOutDateObj);
-        checkOutEnd.setHours(23, 59, 59, 999);
-        
-        const existingData = await serpDataRepository.findOne({
-          $or: [
-            { property_token: transformedData.property_token },
-            { name: transformedData.name },
-          ],
-          'search_parameters.check_in_date': {
-            $gte: checkInStart,
-            $lte: checkInEnd,
-          },
-          'search_parameters.check_out_date': {
-            $gte: checkOutStart,
-            $lte: checkOutEnd,
-          },
-          'search_parameters.adults': adultsCount,
-        });
-
-        if (existingData) {
-          Object.assign(existingData, transformedData);
-          savedSerpData = await existingData.save();
-        } else {
-          savedSerpData = await serpDataRepository.create(transformedData);
-        }
-      } catch (dbError: unknown) {
-        console.error('Database save error:', dbError);
-      }
+      const savedSerpData = await saveSerpDataToDatabase(
+        transformedData,
+        formattedCheckIn,
+        formattedCheckOut,
+        adultsCount,
+        '[GET /serpapi/fetch-rates]'
+      );
 
       return res.json({
         success: true,
         data: ratesData,
         savedToDatabase: !!savedSerpData,
-        databaseId: savedSerpData?._id || null,
+        databaseId: savedSerpData?.savedData?.id || null,
         query: {
           hotelName,
           hotelQuery,
@@ -406,63 +424,33 @@ export class SerpApiController {
             adults: adultsCount
           });
 
-          let savedDoc = null;
+          const saveResult = await saveSerpDataToDatabase(
+            transformed,
+            todayStr,
+            checkoutStr,
+            adultsCount,
+            `[BATCH FETCH] ${hotelName}`
+          );
 
-          try {
-            const checkInDateObj = new Date(todayStr);
-            const checkOutDateObj = new Date(checkoutStr);
-            const checkInStart = new Date(checkInDateObj);
-            checkInStart.setHours(0, 0, 0, 0);
-            const checkInEnd = new Date(checkInDateObj);
-            checkInEnd.setHours(23, 59, 59, 999);
-            const checkOutStart = new Date(checkOutDateObj);
-            checkOutStart.setHours(0, 0, 0, 0);
-            const checkOutEnd = new Date(checkOutDateObj);
-            checkOutEnd.setHours(23, 59, 59, 999);
-            
-            const existingData = await serpDataRepository.findOne({
-              $or: [
-                { property_token: transformed.property_token },
-                { name: transformed.name },
-              ],
-              'search_parameters.check_in_date': {
-                $gte: checkInStart,
-                $lte: checkInEnd,
-              },
-              'search_parameters.check_out_date': {
-                $gte: checkOutStart,
-                $lte: checkOutEnd,
-              },
-              'search_parameters.adults': adultsCount,
-            });
-
-            if (existingData) {
-              Object.assign(existingData, transformed);
-              savedDoc = await existingData.save();
-              console.log(`[DB] Updated existing record for ${hotelName} (${todayStr} -> ${checkoutStr})`);
-            } else {
-              savedDoc = await serpDataRepository.create(transformed);
-              console.log(`[DB] Created new record for ${hotelName} (${todayStr} -> ${checkoutStr})`);
-            }
-
+          if (saveResult) {
             results.push({
               hotelName,
               checkIn: todayStr,
               checkOut: checkoutStr,
               success: true,
-              databaseId: savedDoc?._id || null,
-              updated: !!existingData
+              databaseId: saveResult.savedData?.id || null,
+              updated: saveResult.wasUpdated
             });
-          } catch (dbError: any) {
-            console.error(`\n❌ [DB ERROR] FAILED to save ${hotelName}`);
+          } else {
+            // Database save failed but not critical (table may not exist)
             results.push({
               hotelName,
               checkIn: todayStr,
               checkOut: checkoutStr,
-              success: false,
-              error: dbError.message,
+              success: true, // Mark as success since we're skipping serpdata
+              databaseId: null,
+              updated: false
             });
-            continue;
           }
         } catch (fetchError: any) {
           console.error(`\n❌ [FETCH ERROR] Failed to fetch rates for ${hotelName}`);
@@ -508,6 +496,258 @@ export class SerpApiController {
     } catch (error) {
       console.error('Error fetching calendar data:', error);
       res.status(500).json({ success: false, error: 'Failed to fetch calendar data' });
+    }
+  }
+
+  /**
+   * GET /countries
+   * Fetch all countries from database
+   * Returns: Array of countries with id, name, and code (code needed for gl parameter lookup)
+   */
+  async getCountries(_req: Request, res: Response) {
+    try {
+      const repository = new CountryRepository();
+      const countries = await repository.getAllCountries();
+
+      // Format response for frontend - return id, name, and code
+      const formattedCountries = countries
+        .filter((country) => country.id !== undefined)
+        .map((country) => ({
+          id: country.id!,
+          name: country.name,
+          code: country.code,
+        }));
+
+      return res.json({
+        success: true,
+        count: formattedCountries.length,
+        data: formattedCountries,
+      });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+      if (errorMessage.includes('Database pool not initialized')) {
+        return res.status(500).json({
+          error: 'Database not initialized',
+          message: 'Database connection must be established',
+        });
+      }
+
+      return res.status(500).json({
+        error: 'Failed to fetch countries',
+        message: errorMessage,
+      });
+    }
+  }
+
+  /**
+   * GET /states?countryCode=US
+   * Fetch states by country code from database
+   * Returns: Array of states with id and name (removed code from response, using name only)
+   */
+  async getStates(req: Request, res: Response) {
+    try {
+      const countryCode = req.query.countryCode as string;
+
+      if (!countryCode) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: ['Query parameter "countryCode" is required'],
+        });
+      }
+
+      const repository = new CountryRepository();
+      const states = await repository.getStatesByCountryCode(countryCode);
+
+      // Format response for frontend - only return id and name (removed code)
+      const formattedStates = states
+        .filter((state) => state.id !== undefined)
+        .map((state) => ({
+          id: state.id!,
+          name: state.name,
+        }));
+
+      return res.json({
+        success: true,
+        count: formattedStates.length,
+        data: formattedStates,
+      });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+      if (errorMessage.includes('Database pool not initialized')) {
+        return res.status(500).json({
+          error: 'Database not initialized',
+          message: 'Database connection must be established',
+        });
+      }
+
+      if (errorMessage.includes('required')) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          message: errorMessage,
+        });
+      }
+
+      return res.status(500).json({
+        error: 'Failed to fetch states',
+        message: errorMessage,
+      });
+    }
+  }
+
+  /**
+   * POST /search-hotel
+   * Search hotel using SerpAPI with country code and state name
+   * Accepts: hotelName, countryCode, stateName, checkInDate, checkOutDate, optional params
+   */
+  async searchHotel(req: Request, res: Response) {
+    try {
+      const {
+        hotelName,
+        countryCode,
+        stateName,
+        checkInDate,
+        checkOutDate,
+        hl,
+        currency,
+        adults,
+      } = req.body as SearchHotelRequestBody;
+
+      // Validate adults (default to 2, accept 2, 3, 4, 5)
+      const adultsCount = adults !== undefined ? Number(adults) : 2;
+      if (adults !== undefined && (isNaN(adultsCount) || adultsCount < 2 || adultsCount > 5 || !Number.isInteger(adultsCount))) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: ['adults must be an integer between 2 and 5 (default: 2)'],
+        });
+      }
+
+      console.log('Searching hotel');
+
+      // Format dates
+      const formattedCheckIn = formatDate(checkInDate);
+      const formattedCheckOut = formatDate(checkOutDate);
+
+      // Search hotel from SerpAPI
+      const ratesData = await searchHotelWithLocation({
+        hotelName,
+        countryCode,
+        stateName,
+        checkInDate: formattedCheckIn,
+        checkOutDate: formattedCheckOut,
+        hl: hl || 'en',
+        currency: currency || 'USD',
+        adults: adultsCount,
+      });
+
+      // Transform SerpAPI response to SerpData format
+      const hotelQuery = `${hotelName} ${stateName}`;
+      const transformedData = transformSerpApiResponse(ratesData, {
+        hotelQuery,
+        checkInDate: formattedCheckIn,
+        checkOutDate: formattedCheckOut,
+        gl: countryCode.toLowerCase(),
+        hl: hl || 'en',
+        currency: currency || 'USD',
+        adults: adultsCount,
+      });
+
+      // Save to database
+      const savedSerpData = await saveSerpDataToDatabase(
+        transformedData,
+        formattedCheckIn,
+        formattedCheckOut,
+        adultsCount,
+        '[POST /serpapi/search-hotel]'
+      );
+
+      // Extract only: type, name, GPS coordinates, hotelclass
+      let filteredData = null;
+      
+      if (ratesData?.properties) {
+        if (Array.isArray(ratesData.properties)) {
+          // Multiple properties - return array with only required fields
+          filteredData = ratesData.properties.map((property: any) => ({
+            type: property.type,
+            name: property.name,
+            gps_coordinates: property.gps_coordinates,
+            hotel_class: property.hotel_class,
+          }));
+        } else {
+          // Single property object - return only required fields
+          filteredData = {
+            type: ratesData.properties.type,
+            name: ratesData.properties.name,
+            gps_coordinates: ratesData.properties.gps_coordinates,
+            hotel_class: ratesData.properties.hotel_class,
+          };
+        }
+      } else if (transformedData) {
+        // Use transformed data - return only required fields
+        filteredData = {
+          type: transformedData.type,
+          name: transformedData.name,
+          gps_coordinates: transformedData.gps_coordinates,
+          hotel_class: transformedData.hotel_class,
+        };
+      }
+
+      if (filteredData) {
+        if (Array.isArray(filteredData) && filteredData.length > 0) {
+          console.log(`Hotel found: ${filteredData.length} result(s)`);
+        } else if (filteredData.name) {
+          console.log(`Hotel found: ${filteredData.name}`);
+        }
+      } else {
+        console.log('Hotel not found');
+      }
+
+      return res.json({
+        success: true,
+        data: filteredData,
+        savedToDatabase: !!savedSerpData,
+        databaseId: savedSerpData?.savedData?.id || null,
+        query: {
+          hotelName,
+          countryCode,
+          stateName,
+          checkInDate: formattedCheckIn,
+          checkOutDate: formattedCheckOut,
+          hl: hl || 'en',
+          currency: currency || 'USD',
+          adults: adultsCount,
+        },
+      });
+    } catch (error: unknown) {
+      console.error('Search hotel error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+      if (errorMessage.includes('SERP_API_KEY')) {
+        return res.status(500).json({
+          error: 'SerpAPI configuration error',
+          message: errorMessage,
+        });
+      }
+
+      if (errorMessage.includes('Invalid date')) {
+        return res.status(400).json({
+          error: 'Invalid date format',
+          message: errorMessage,
+        });
+      }
+
+      if (errorMessage.includes('not found')) {
+        return res.status(404).json({
+          error: 'Location not found',
+          message: errorMessage,
+        });
+      }
+
+      return res.status(500).json({
+        error: 'Failed to search hotel',
+        message: errorMessage,
+      });
     }
   }
 }

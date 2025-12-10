@@ -18,13 +18,32 @@ export type PublicUser = {
   businessEmail: string;
   country: string;
   hotelName: string;
+  hotelId?: string; // Changed to string (VARCHAR) to match hotel_id
   phoneNumber: string;
   currentPMS: string;
   businessType: 'Independent Hotel' | 'Chain Hotel' | 'Hotel Management Company' | "OTA's";
-  numberOfRooms: number;
   createdAt?: Date;
   updatedAt?: Date;
 };
+
+// Hotel Interface
+export interface Hotel {
+  hotelId: string; // Changed from id (number) to hotelId (string) - primary key
+  name: string;
+  propertyToken?: string;
+  address?: string;
+  phone?: string;
+  gpsLatitude?: number;
+  gpsLongitude?: number;
+  hotelClass?: string;
+  overallRating?: number;
+  reviewsCount?: number;
+  description?: string;
+  checkInTime?: string;
+  checkOutTime?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
 
 // User Interface (PostgreSQL)
 export interface User {
@@ -33,6 +52,7 @@ export interface User {
   businessEmail: string;
   country: string;
   hotelName: string;
+  hotelId?: string; // Changed to string (VARCHAR) to match hotel_id
   phoneNumber: string;
   currentPMS: string;
   businessType: 'Independent Hotel' | 'Chain Hotel' | 'Hotel Management Company' | "OTA's";
@@ -52,8 +72,49 @@ export interface RegisterRequestBody {
   phoneNumber: string;
   currentPMS: string;
   businessType: 'Independent Hotel' | 'Chain Hotel' | 'Hotel Management Company' | "OTA's";
-  numberOfRooms: number;
   password: string;
+  selectedHotel?: {
+    type?: string;
+    name: string;
+    description?: string;
+    link?: string;
+    property_token?: string;
+    serpapi_property_details_link?: string;
+    address?: string;
+    directions?: string;
+    phone?: string;
+    phone_link?: string;
+    gps_coordinates: {
+      latitude: number;
+      longitude: number;
+    };
+    check_in_time?: string;
+    check_out_time?: string;
+    rate_per_night?: any;
+    total_rate?: any;
+    typical_price_range?: any;
+    deal?: string;
+    deal_description?: string;
+    featured_prices?: any;
+    prices?: any;
+    nearby_places?: any;
+    hotel_class?: string;
+    extracted_hotel_class?: number;
+    images?: any;
+    overall_rating?: number;
+    reviews?: number;
+    ratings?: any;
+    location_rating?: number;
+    reviews_breakdown?: any;
+    other_reviews?: any;
+    amenities?: any;
+    excluded_amenities?: any;
+    amenities_detailed?: any;
+    health_and_safety?: any;
+  };
+  state?: string;
+  city?: string;
+  role?: string;
 }
 
 // Login Request Body
@@ -86,5 +147,17 @@ export interface FetchHotelRatesParams {
   gl?: string;
   hl?: string;
   currency?: string;
+}
+
+// Hotel Search Request Body (with location)
+export interface SearchHotelRequestBody {
+  hotelName: string;
+  countryCode: string;
+  stateName: string;
+  checkInDate: string | Date;
+  checkOutDate: string | Date;
+  hl?: string;
+  currency?: string;
+  adults?: number;
 }
 

@@ -10,8 +10,8 @@ export class UserRepository {
   async findByEmail(businessEmail: string): Promise<User | null> {
     const query = `
       SELECT id, name, business_email as "businessEmail", country, hotel_name as "hotelName",
-             phone_number as "phoneNumber", current_pms as "currentPMS", 
-             business_type as "businessType", number_of_rooms as "numberOfRooms",
+             hotel_id as "hotelId", phone_number as "phoneNumber", current_pms as "currentPMS", 
+             business_type as "businessType",
              password, refresh_tokens as "refreshTokens", created_at as "createdAt", 
              updated_at as "updatedAt"
       FROM users
@@ -25,8 +25,8 @@ export class UserRepository {
   async findById(id: number): Promise<User | null> {
     const query = `
       SELECT id, name, business_email as "businessEmail", country, hotel_name as "hotelName",
-             phone_number as "phoneNumber", current_pms as "currentPMS", 
-             business_type as "businessType", number_of_rooms as "numberOfRooms",
+             hotel_id as "hotelId", phone_number as "phoneNumber", current_pms as "currentPMS", 
+             business_type as "businessType",
              password, refresh_tokens as "refreshTokens", created_at as "createdAt", 
              updated_at as "updatedAt"
       FROM users
@@ -40,8 +40,8 @@ export class UserRepository {
   async findByRefreshToken(refreshToken: string): Promise<User | null> {
     const query = `
       SELECT id, name, business_email as "businessEmail", country, hotel_name as "hotelName",
-             phone_number as "phoneNumber", current_pms as "currentPMS", 
-             business_type as "businessType", number_of_rooms as "numberOfRooms",
+             hotel_id as "hotelId", phone_number as "phoneNumber", current_pms as "currentPMS", 
+             business_type as "businessType",
              password, refresh_tokens as "refreshTokens", created_at as "createdAt", 
              updated_at as "updatedAt"
       FROM users
@@ -52,19 +52,19 @@ export class UserRepository {
     return result.rows[0] || null;
   }
 
-  async create(userData: RegisterRequestBody): Promise<User> {
+  async create(userData: RegisterRequestBody & { hotelId?: string }): Promise<User> {
     // Hash password before storing
     const hashedPassword = await hashPassword(userData.password);
     
     const query = `
       INSERT INTO users (
-        name, business_email, country, hotel_name, phone_number,
-        current_pms, business_type, number_of_rooms, password
+        name, business_email, country, hotel_name, hotel_id, phone_number,
+        current_pms, business_type, password
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING id, name, business_email as "businessEmail", country, hotel_name as "hotelName",
-                phone_number as "phoneNumber", current_pms as "currentPMS", 
-                business_type as "businessType", number_of_rooms as "numberOfRooms",
+                hotel_id as "hotelId", phone_number as "phoneNumber", current_pms as "currentPMS", 
+                business_type as "businessType",
                 password, refresh_tokens as "refreshTokens", created_at as "createdAt", 
                 updated_at as "updatedAt"
     `;
@@ -74,10 +74,10 @@ export class UserRepository {
       userData.businessEmail,
       userData.country,
       userData.hotelName,
+      userData.hotelId ?? null,
       userData.phoneNumber,
       userData.currentPMS,
       userData.businessType,
-      userData.numberOfRooms,
       hashedPassword,
     ];
     
@@ -103,6 +103,10 @@ export class UserRepository {
       updates.push(`hotel_name = $${paramIndex++}`);
       values.push(updateData.hotelName);
     }
+    if (updateData.hotelId !== undefined) {
+      updates.push(`hotel_id = $${paramIndex++}`);
+      values.push(updateData.hotelId);
+    }
     if (updateData.phoneNumber !== undefined) {
       updates.push(`phone_number = $${paramIndex++}`);
       values.push(updateData.phoneNumber);
@@ -114,10 +118,6 @@ export class UserRepository {
     if (updateData.businessType !== undefined) {
       updates.push(`business_type = $${paramIndex++}`);
       values.push(updateData.businessType);
-    }
-    if (updateData.numberOfRooms !== undefined) {
-      updates.push(`number_of_rooms = $${paramIndex++}`);
-      values.push(updateData.numberOfRooms);
     }
 
     if (updates.length === 0) {
@@ -132,8 +132,8 @@ export class UserRepository {
       SET ${updates.join(', ')}
       WHERE id = $${paramIndex}
       RETURNING id, name, business_email as "businessEmail", country, hotel_name as "hotelName",
-                phone_number as "phoneNumber", current_pms as "currentPMS", 
-                business_type as "businessType", number_of_rooms as "numberOfRooms",
+                hotel_id as "hotelId", phone_number as "phoneNumber", current_pms as "currentPMS", 
+                business_type as "businessType",
                 password, refresh_tokens as "refreshTokens", created_at as "createdAt", 
                 updated_at as "updatedAt"
     `;
@@ -148,8 +148,8 @@ export class UserRepository {
       SET refresh_tokens = array_append(refresh_tokens, $1)
       WHERE id = $2
       RETURNING id, name, business_email as "businessEmail", country, hotel_name as "hotelName",
-                phone_number as "phoneNumber", current_pms as "currentPMS", 
-                business_type as "businessType", number_of_rooms as "numberOfRooms",
+                hotel_id as "hotelId", phone_number as "phoneNumber", current_pms as "currentPMS", 
+                business_type as "businessType",
                 password, refresh_tokens as "refreshTokens", created_at as "createdAt", 
                 updated_at as "updatedAt"
     `;
@@ -164,8 +164,8 @@ export class UserRepository {
       SET refresh_tokens = array_remove(refresh_tokens, $1)
       WHERE $1 = ANY(refresh_tokens)
       RETURNING id, name, business_email as "businessEmail", country, hotel_name as "hotelName",
-                phone_number as "phoneNumber", current_pms as "currentPMS", 
-                business_type as "businessType", number_of_rooms as "numberOfRooms",
+                hotel_id as "hotelId", phone_number as "phoneNumber", current_pms as "currentPMS", 
+                business_type as "businessType",
                 password, refresh_tokens as "refreshTokens", created_at as "createdAt", 
                 updated_at as "updatedAt"
     `;

@@ -9,4 +9,5 @@
 \i schema/hotels.sql
 \i schema/rates.sql
 \i schema/ota_rates.sql
+\i schema/serpdata.sql
 

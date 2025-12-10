@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import Joi from 'joi';
-import { FetchRatesRequestBody } from '../../../shared/types';
+import { FetchRatesRequestBody, SearchHotelRequestBody } from '../../../shared/types';
 
 export const fetchRatesSchema = Joi.object<FetchRatesRequestBody>({
   hotelName: Joi.string().min(2).required().messages({
@@ -143,4 +143,111 @@ export const validateFetchRates = (
   next();
 };
 
+export const searchHotelSchema = Joi.object<SearchHotelRequestBody>({
+  hotelName: Joi.string().min(2).required().messages({
+    'string.min': 'Hotel name must be at least 2 characters',
+    'any.required': 'Hotel name is required',
+  }),
+  countryCode: Joi.string().length(2).required().messages({
+    'string.length': 'Country code must be 2 characters',
+    'any.required': 'Country code is required',
+  }),
+  stateName: Joi.string().min(2).required().messages({
+    'string.min': 'State name must be at least 2 characters',
+    'any.required': 'State name is required',
+  }),
+  checkInDate: Joi.alternatives()
+    .try(
+      Joi.date().iso(),
+      Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/)
+    )
+    .required()
+    .messages({
+      'date.base': 'Check-in date must be a valid date',
+      'string.pattern.base': 'Check-in date must be in YYYY-MM-DD format',
+      'any.required': 'Check-in date is required',
+    }),
+  checkOutDate: Joi.alternatives()
+    .try(
+      Joi.date().iso(),
+      Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/)
+    )
+    .required()
+    .messages({
+      'date.base': 'Check-out date must be a valid date',
+      'string.pattern.base': 'Check-out date must be in YYYY-MM-DD format',
+      'any.required': 'Check-out date is required',
+    }),
+  hl: Joi.string().length(2).optional().default('en').messages({
+    'string.length': 'Language code (hl) must be 2 characters',
+  }),
+  currency: Joi.string().length(3).optional().default('USD').messages({
+    'string.length': 'Currency code must be 3 characters',
+  }),
+  adults: Joi.number().integer().min(2).max(5).optional().default(2).messages({
+    'number.base': 'Adults must be a number',
+    'number.integer': 'Adults must be an integer',
+    'number.min': 'Adults must be at least 2',
+    'number.max': 'Adults must be at most 5',
+  }),
+}).custom((value, helpers) => {
+  // Validate that check-out date is after check-in date
+  const checkIn = new Date(value.checkInDate);
+  const checkOut = new Date(value.checkOutDate);
+  
+  if (checkOut <= checkIn) {
+    return helpers.error('any.custom', {
+      message: 'Check-out date must be after check-in date',
+    });
+  }
+  
+  // Validate dates are not in the past
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  if (checkIn < today) {
+    return helpers.error('any.custom', {
+      message: 'Check-in date cannot be in the past',
+    });
+  }
+  
+  return value;
+});
+
+/**
+ * Validate search hotel request
+ */
+export const validateSearchHotel = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  console.log('[VALIDATOR] Incoming search hotel req.body:', req.body);
+
+  // Parse raw string (URL-encoded) if needed
+  if (typeof req.body === "string") {
+    req.body = Object.fromEntries(
+      new URLSearchParams(req.body)
+    );
+  }
+
+  // Validate
+  const { error, value } = searchHotelSchema.validate(req.body, {
+    abortEarly: false,
+  });
+
+  if (error) {
+    const errors = error.details.map((d) => d.message);
+    console.log('[VALIDATOR] Search hotel errors:', errors);
+    res.status(400).json({
+      error: "Validation failed",
+      details: errors,
+    });
+    return;
+  }
+
+  // Overwrite req.body with clean validated data
+  req.body = value;
+  next();
+};
 

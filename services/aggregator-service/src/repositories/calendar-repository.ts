@@ -6,6 +6,10 @@ export interface CalendarDataRequest {
   los?: number; // Single value: 1, 2, 3, etc.
   guests?: number; // Single value: 1, 2, 3, 4, etc.
   hotelName?: string;
+  dateRange?: {
+    startDate?: string;
+    endDate?: string;
+  };
 }
 
 export interface RateData {
@@ -32,6 +36,23 @@ export interface CalendarDataResponse {
   filters: CalendarDataRequest;
   resultCount: number;
   data: CalendarDataItem[];
+}
+
+export interface AggregatedDataItem {
+  checkin_date: string;
+  checkout_date: string;
+  ota_platform: string;
+  room_count: number;
+  min_price: number;
+  max_price: number;
+  avg_price: number;
+}
+
+export interface AggregatedCalendarDataResponse {
+  message: string;
+  filters: CalendarDataRequest;
+  resultCount: number;
+  data: AggregatedDataItem[];
 }
 
 export class CalendarRepository {
@@ -189,6 +210,7 @@ export class CalendarRepository {
         data: formattedData,
       };
     } catch (error) {
+      console.error('Error fetching calendar data:', error);
       throw error;
     }
   }
@@ -196,7 +218,7 @@ export class CalendarRepository {
   /**
    * Get aggregated calendar data (e.g., min/max prices by date)
    */
-  async getAggregatedCalendarData(filters: CalendarDataRequest): Promise<any> {
+  async getAggregatedCalendarData(filters: CalendarDataRequest): Promise<AggregatedCalendarDataResponse> {
     console.log('=== AGGREGATED CALENDAR DATA REQUEST ===');
     console.log('Filters received:', JSON.stringify(filters, null, 2));
     console.log('========================================');
@@ -258,6 +280,7 @@ export class CalendarRepository {
         data: result.rows,
       };
     } catch (error) {
+      console.error('Error fetching aggregated calendar data:', error);
       throw error;
     }
   }

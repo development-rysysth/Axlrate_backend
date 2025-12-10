@@ -30,3 +30,14 @@ export function formatDate(date: Date | string): string {
   return format(dateObj, 'yyyy-MM-dd');
 }
 
+/**
+ * Formats hotel search query by combining hotel name and state name
+ * @param hotelName - The hotel name
+ * @param stateName - The state name
+ * @returns Formatted query string: "hotelName stateName"
+ */
+export function formatHotelSearchQuery(hotelName: string, stateName: string): string {
+  const query = `${hotelName.trim()} ${stateName.trim()}`.trim();
+  return query;
+}
+
