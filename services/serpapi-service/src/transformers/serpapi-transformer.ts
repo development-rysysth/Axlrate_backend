@@ -25,6 +25,35 @@ function extractNumericValue(value: any, defaultValue: number = 0): number {
  * @param searchParams - Search parameters used for the query
  * @returns Transformed data matching ISerpData interface
  */
+/**
+ * Recursively serialize Date objects to ISO strings for JSONB storage
+ */
+function serializeDates(obj: any): any {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+  
+  if (obj instanceof Date) {
+    return obj.toISOString();
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => serializeDates(item));
+  }
+  
+  if (typeof obj === 'object') {
+    const serialized: any = {};
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        serialized[key] = serializeDates(obj[key]);
+      }
+    }
+    return serialized;
+  }
+  
+  return obj;
+}
+
 export function transformSerpApiResponse(serpApiResponse: any, searchParams: any) {
   const hotelData = serpApiResponse.properties?.[0] || serpApiResponse;
 
@@ -36,34 +65,39 @@ export function transformSerpApiResponse(serpApiResponse: any, searchParams: any
       ? Number(v)
       : undefined;
 
-  return {
-    search_metadata: {
-      id: serpApiResponse.search_metadata?.id || `serp_${Date.now()}`,
-      status: serpApiResponse.search_metadata?.status,
-      json_endpoint: serpApiResponse.search_metadata?.json_endpoint,
-      created_at: serpApiResponse.search_metadata?.created_at
-        ? new Date(serpApiResponse.search_metadata.created_at)
-        : new Date(),
-      processed_at: serpApiResponse.search_metadata?.processed_at
-        ? new Date(serpApiResponse.search_metadata.processed_at)
-        : new Date(),
-      google_hotels_url: serpApiResponse.search_metadata?.google_hotels_url,
-      raw_html_file: serpApiResponse.search_metadata?.raw_html_file,
-      prettify_html_file: serpApiResponse.search_metadata?.prettify_html_file,
-      total_time_taken: safeNumber(serpApiResponse.search_metadata?.total_time_taken),
-    },
+  // Create metadata with Date objects first, then serialize
+  const searchMetadata = {
+    id: serpApiResponse.search_metadata?.id || `serp_${Date.now()}`,
+    status: serpApiResponse.search_metadata?.status,
+    json_endpoint: serpApiResponse.search_metadata?.json_endpoint,
+    created_at: serpApiResponse.search_metadata?.created_at
+      ? new Date(serpApiResponse.search_metadata.created_at)
+      : new Date(),
+    processed_at: serpApiResponse.search_metadata?.processed_at
+      ? new Date(serpApiResponse.search_metadata.processed_at)
+      : new Date(),
+    google_hotels_url: serpApiResponse.search_metadata?.google_hotels_url,
+    raw_html_file: serpApiResponse.search_metadata?.raw_html_file,
+    prettify_html_file: serpApiResponse.search_metadata?.prettify_html_file,
+    total_time_taken: safeNumber(serpApiResponse.search_metadata?.total_time_taken),
+  };
 
-    search_parameters: {
-      engine: serpApiResponse.search_parameters?.engine || 'google_hotels',
-      q: searchParams.hotelQuery,
-      gl: searchParams.gl || 'us',
-      hl: searchParams.hl || 'en',
-      currency: searchParams.currency || 'USD',
-      check_in_date: new Date(searchParams.checkInDate),
-      check_out_date: new Date(searchParams.checkOutDate),
-      adults: safeNumber(searchParams.adults) ?? safeNumber(serpApiResponse.search_parameters?.adults) ?? 2,
-      children: safeNumber(serpApiResponse.search_parameters?.children) ?? 0,
-    },
+  // Create search parameters with Date objects first, then serialize
+  const searchParameters = {
+    engine: serpApiResponse.search_parameters?.engine || 'google_hotels',
+    q: searchParams.hotelQuery,
+    gl: searchParams.gl || 'us',
+    hl: searchParams.hl || 'en',
+    currency: searchParams.currency || 'USD',
+    check_in_date: new Date(searchParams.checkInDate),
+    check_out_date: new Date(searchParams.checkOutDate),
+    adults: safeNumber(searchParams.adults) ?? safeNumber(serpApiResponse.search_parameters?.adults) ?? 2,
+    children: safeNumber(serpApiResponse.search_parameters?.children) ?? 0,
+  };
+
+  return {
+    search_metadata: serializeDates(searchMetadata),
+    search_parameters: serializeDates(searchParameters),
 
     type: safeString(hotelData.type),
     name: safeString(hotelData.name),
@@ -123,8 +157,8 @@ export function transformSerpApiResponse(serpApiResponse: any, searchParams: any
     excluded_amenities: Array.isArray(hotelData.excluded_amenities)
       ? hotelData.excluded_amenities
       : undefined,
-    amenities_detailed: hotelData.amenities_detailed || undefined,
-    health_and_safety: hotelData.health_and_safety || undefined,
+    amenities_detailed: serializeDates(hotelData.amenities_detailed || undefined),
+    health_and_safety: serializeDates(hotelData.health_and_safety || undefined),
   };
 }
 

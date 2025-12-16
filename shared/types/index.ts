@@ -2,7 +2,7 @@ import { Request } from 'express';
 
 // JWT Token Payload
 export interface TokenPayload {
-  id: number;
+  id: string; // UUID
   businessEmail: string;
 }
 
@@ -13,10 +13,11 @@ export interface AuthenticatedRequest extends Request {
 
 // Public User (without sensitive fields)
 export type PublicUser = {
-  id: number;
+  id: string; // UUID
   name: string;
   businessEmail: string;
   country: string;
+  state?: string;
   hotelName: string;
   hotelId?: string; // Changed to string (VARCHAR) to match hotel_id
   phoneNumber: string;
@@ -32,25 +33,33 @@ export interface Hotel {
   name: string;
   propertyToken?: string;
   address?: string;
+  city?: string;
+  zipCode?: string;
   phone?: string;
   gpsLatitude?: number;
   gpsLongitude?: number;
-  hotelClass?: string;
-  overallRating?: number;
-  reviewsCount?: number;
+  hotelClass?: number; // star_rating from schema
+  overallRating?: number; // review_score from schema
+  reviewsCount?: number; // review_count from schema
+  reviewTags?: string; // review_tags from schema
   description?: string;
   checkInTime?: string;
   checkOutTime?: string;
+  nearbyPlaces?: any; // JSONB field
+  amenitiesJson?: any; // JSONB field containing comprehensive SerpAPI data
+  competitors?: string[]; // Array of accepted competitor hotel_ids
+  suggestedCompetitors?: string[]; // Array of suggested competitor hotel_ids (initially populated)
   createdAt?: Date;
   updatedAt?: Date;
 }
 
 // User Interface (PostgreSQL)
 export interface User {
-  id: number;
+  id: string; // UUID
   name: string;
   businessEmail: string;
   country: string;
+  state?: string;
   hotelName: string;
   hotelId?: string; // Changed to string (VARCHAR) to match hotel_id
   phoneNumber: string;

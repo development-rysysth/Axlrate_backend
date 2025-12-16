@@ -23,8 +23,29 @@ export interface SearchHotelWithLocationParams {
   adults?: number;
 }
 
-const SERP_API_KEY = process.env.SERP_API_KEY;
+export interface SearchHotelsByLocationParams {
+  location: string; // city or state name
+  countryCode: string;
+  checkInDate: string;
+  checkOutDate: string;
+  gl?: string;
+  hl?: string;
+  currency?: string;
+  adults?: number;
+}
+
 const SERP_API_BASE_URL = 'https://serpapi.com/search';
+
+/**
+ * Get SERP API key from environment (reads dynamically)
+ */
+function getSerpApiKey(): string {
+  const key = process.env.SERP_API_KEY;
+  if (!key) {
+    throw new Error('SERP_API_KEY is not configured');
+  }
+  return key;
+}
 
 /**
  * Fetch hotel rates from SerpAPI
@@ -40,9 +61,7 @@ export async function fetchHotelRates({
   currency = 'USD',
   adults = 2,
 }: FetchHotelRatesParams): Promise<unknown> {
-  if (!SERP_API_KEY) {
-    throw new Error('SERP_API_KEY is not configured');
-  }
+  const apiKey = getSerpApiKey();
 
   const params = {
     engine: 'google_hotels',
@@ -53,7 +72,7 @@ export async function fetchHotelRates({
     check_in_date: checkInDate,
     check_out_date: checkOutDate,
     adults,
-    api_key: SERP_API_KEY,
+    api_key: apiKey,
   };
 
   try {
@@ -85,9 +104,7 @@ export async function searchHotelWithLocation({
   currency = 'USD',
   adults = 2,
 }: SearchHotelWithLocationParams): Promise<unknown> {
-  if (!SERP_API_KEY) {
-    throw new Error('SERP_API_KEY is not configured');
-  }
+  const apiKey = getSerpApiKey();
 
   // Look up country from database to get 2-letter code for gl parameter
   const countryRepository = new CountryRepository();
@@ -118,7 +135,7 @@ export async function searchHotelWithLocation({
     check_in_date: checkInDate,
     check_out_date: checkOutDate,
     adults,
-    api_key: SERP_API_KEY,
+    api_key: apiKey,
   };
 
   try {
@@ -129,6 +146,54 @@ export async function searchHotelWithLocation({
     throw new Error(
       axiosError.response?.data?.error ||
       'Failed to search hotel from SerpAPI'
+    );
+  }
+}
+
+/**
+ * Search hotels by location (city or state)
+ * Searches for "hotels in ${location}" to get multiple hotels in the area
+ * @param params - Search parameters including location, country code, dates
+ * @returns SerpAPI response with properties array containing multiple hotels
+ */
+export async function searchHotelsByLocation({
+  location,
+  countryCode,
+  checkInDate,
+  checkOutDate,
+  gl,
+  hl = 'en',
+  currency = 'USD',
+  adults = 2,
+}: SearchHotelsByLocationParams): Promise<unknown> {
+  const apiKey = getSerpApiKey();
+
+  // Build query: "hotels in ${location}"
+  const hotelQuery = `hotels in ${location}`;
+
+  // Use provided gl or derive from countryCode
+  const glParam = gl || countryCode.toLowerCase();
+
+  const params = {
+    engine: 'google_hotels',
+    q: hotelQuery,
+    gl: glParam,
+    hl,
+    currency,
+    check_in_date: checkInDate,
+    check_out_date: checkOutDate,
+    adults,
+    api_key: apiKey,
+  };
+
+  try {
+    const response: AxiosResponse = await axios.get(SERP_API_BASE_URL, { params });
+    return response.data;
+  } catch (error: unknown) {
+    const axiosError = error as { response?: { data?: { error?: string } }; message?: string };
+    throw new Error(
+      axiosError.response?.data?.error ||
+      'Failed to search hotels by location from SerpAPI'
     );
   }
 }

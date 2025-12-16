@@ -2,95 +2,10 @@ import { Request, Response } from 'express';
 import { FetchRatesRequestBody, SearchHotelRequestBody } from '../../../../shared/types';
 import { fetchHotelRates, searchHotelWithLocation } from '../collectors/serpapi-collector';
 import { transformSerpApiResponse } from '../transformers/serpapi-transformer';
-import { SerpDataRepository } from '../repositories/serpdata-repository';
 import { CountryRepository } from '../repositories/country-repository';
 import { formatHotelQuery, formatDate } from '../utils/formatters';
 import { validateFetchRates, fetchRatesSchema } from '../../validators/serpapi';
 import { hotels } from '../../../../shared/constants';
-
-const serpDataRepository = new SerpDataRepository();
-
-/**
- * Helper function to create date range for database queries
- * Returns start and end of day for check-in and check-out dates
- */
-function createDateRange(checkInDate: string, checkOutDate: string) {
-  const checkInDateObj = new Date(checkInDate);
-  const checkOutDateObj = new Date(checkOutDate);
-  
-  const checkInStart = new Date(checkInDateObj);
-  checkInStart.setHours(0, 0, 0, 0);
-  
-  const checkInEnd = new Date(checkInDateObj);
-  checkInEnd.setHours(23, 59, 59, 999);
-  
-  const checkOutStart = new Date(checkOutDateObj);
-  checkOutStart.setHours(0, 0, 0, 0);
-  
-  const checkOutEnd = new Date(checkOutDateObj);
-  checkOutEnd.setHours(23, 59, 59, 999);
-  
-  return { checkInStart, checkInEnd, checkOutStart, checkOutEnd };
-}
-
-/**
- * Helper function to build query for finding existing SerpData
- */
-function buildSerpDataQuery(
-  transformedData: any,
-  checkInStart: Date,
-  checkInEnd: Date,
-  checkOutStart: Date,
-  checkOutEnd: Date,
-  adultsCount: number
-) {
-  return {
-    $or: [
-      { property_token: transformedData.property_token },
-      { name: transformedData.name },
-    ],
-    'search_parameters.check_in_date': {
-      $gte: checkInStart,
-      $lte: checkInEnd,
-    },
-    'search_parameters.check_out_date': {
-      $gte: checkOutStart,
-      $lte: checkOutEnd,
-    },
-    'search_parameters.adults': adultsCount,
-  };
-}
-
-/**
- * Helper function to save or update SerpData in database
- * Returns an object with savedData and wasUpdated flag, or null if save failed
- */
-async function saveSerpDataToDatabase(
-  transformedData: any,
-  checkInDate: string,
-  checkOutDate: string,
-  adultsCount: number,
-  logPrefix: string = '[SerpAPI]'
-): Promise<{ savedData: any; wasUpdated: boolean } | null> {
-  try {
-    const { checkInStart, checkInEnd, checkOutStart, checkOutEnd } = createDateRange(checkInDate, checkOutDate);
-    const query = buildSerpDataQuery(transformedData, checkInStart, checkInEnd, checkOutStart, checkOutEnd, adultsCount);
-    
-    const existingData = await serpDataRepository.findOne(query);
-
-    if (existingData) {
-      const savedData = await serpDataRepository.findAndUpdate(query, transformedData);
-      return { savedData, wasUpdated: true };
-    } else {
-      const savedData = await serpDataRepository.create(transformedData);
-      return { savedData, wasUpdated: false };
-    }
-  } catch (dbError: unknown) {
-    // Skip serpdata save errors silently (table may not exist or not needed)
-    // Continue even if database save fails
-    return null;
-  }
-}
 
 export class SerpApiController {
   async fetchRates(req: Request, res: Response) {
@@ -143,20 +58,9 @@ export class SerpApiController {
         adults: adultsCount,
       });
 
-      // Save to database
-      const savedSerpData = await saveSerpDataToDatabase(
-        transformedData,
-        formattedCheckIn,
-        formattedCheckOut,
-        adultsCount,
-        '[POST /serpapi/fetch-rates]'
-      );
-
       return res.json({
         success: true,
         data: ratesData,
-        savedToDatabase: !!savedSerpData,
-        databaseId: savedSerpData?.savedData?.id || null,
         query: {
           hotelName,
           hotelQuery,
@@ -298,20 +202,9 @@ export class SerpApiController {
         adults: adultsCount,
       });
 
-      // Save to DB
-      const savedSerpData = await saveSerpDataToDatabase(
-        transformedData,
-        formattedCheckIn,
-        formattedCheckOut,
-        adultsCount,
-        '[GET /serpapi/fetch-rates]'
-      );
-
       return res.json({
         success: true,
         data: ratesData,
-        savedToDatabase: !!savedSerpData,
-        databaseId: savedSerpData?.savedData?.id || null,
         query: {
           hotelName,
           hotelQuery,
@@ -424,34 +317,12 @@ export class SerpApiController {
             adults: adultsCount
           });
 
-          const saveResult = await saveSerpDataToDatabase(
-            transformed,
-            todayStr,
-            checkoutStr,
-            adultsCount,
-            `[BATCH FETCH] ${hotelName}`
-          );
-
-          if (saveResult) {
-            results.push({
-              hotelName,
-              checkIn: todayStr,
-              checkOut: checkoutStr,
-              success: true,
-              databaseId: saveResult.savedData?.id || null,
-              updated: saveResult.wasUpdated
-            });
-          } else {
-            // Database save failed but not critical (table may not exist)
-            results.push({
-              hotelName,
-              checkIn: todayStr,
-              checkOut: checkoutStr,
-              success: true, // Mark as success since we're skipping serpdata
-              databaseId: null,
-              updated: false
-            });
-          }
+          results.push({
+            hotelName,
+            checkIn: todayStr,
+            checkOut: checkoutStr,
+            success: true,
+          });
         } catch (fetchError: any) {
           console.error(`\n❌ [FETCH ERROR] Failed to fetch rates for ${hotelName}`);
           results.push({
@@ -490,13 +361,12 @@ export class SerpApiController {
   }
 
   async getCalendarData(_req: Request, res: Response) {
-    try {
-      const data = await serpDataRepository.findAllSummaries();
-      res.json({ success: true, data });
-    } catch (error) {
-      console.error('Error fetching calendar data:', error);
-      res.status(500).json({ success: false, error: 'Failed to fetch calendar data' });
-    }
+    // This endpoint is deprecated - calendar data is now handled by aggregator-service
+    // which queries the rates table directly
+    return res.status(410).json({ 
+      success: false, 
+      error: 'This endpoint has been deprecated. Please use the aggregator-service /v1/calendar-data endpoint instead.' 
+    });
   }
 
   /**
@@ -653,15 +523,6 @@ export class SerpApiController {
         adults: adultsCount,
       });
 
-      // Save to database
-      const savedSerpData = await saveSerpDataToDatabase(
-        transformedData,
-        formattedCheckIn,
-        formattedCheckOut,
-        adultsCount,
-        '[POST /serpapi/search-hotel]'
-      );
-
       // Extract only: type, name, GPS coordinates, hotelclass
       let filteredData = null;
       
@@ -706,8 +567,6 @@ export class SerpApiController {
       return res.json({
         success: true,
         data: filteredData,
-        savedToDatabase: !!savedSerpData,
-        databaseId: savedSerpData?.savedData?.id || null,
         query: {
           hotelName,
           countryCode,

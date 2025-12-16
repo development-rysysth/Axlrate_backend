@@ -35,7 +35,12 @@
     "migration:run": "npx --yes tsx scripts/run-migration.ts",
     "migration:005": "npx --yes tsx scripts/run-migration-005.ts",
     "migration:006": "npx --yes tsx scripts/run-migration-006.ts",
-    "db:check": "npx --yes tsx scripts/check-database.ts"
+    "migration:007": "npx --yes tsx scripts/run-migration-007.ts",
+    "migration:008": "npx --yes tsx scripts/run-migration-008.ts",
+    "migration:009": "npx --yes tsx scripts/run-migration-009.ts",
+    "migration:010": "npx --yes tsx scripts/run-migration-010.ts",
+    "db:check": "npx --yes tsx scripts/check-database.ts",
+    "update:hotels": "npx --yes tsx scripts/update-hotel-details.ts"
   },
   "keywords": [
     "microservices",
@@ -46,6 +51,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "dotenv": "^16.3.1"
   }
 }

@@ -4,7 +4,8 @@ import {
   LoginRequestBody, 
   RefreshTokenRequestBody,
   AuthenticatedRequest,
-  User
+  User,
+  Hotel
 } from '../../../../shared';
 import { UserRepository } from '../repositories/user-repository';
 import { HotelRepository } from '../repositories/hotel-repository';
@@ -12,88 +13,79 @@ import { JwtService } from '../services/jwt-service';
 import { comparePassword } from '../../../../shared/utils/password';
 import { fetchHotelRates, searchHotelWithLocation } from '../../../serpapi-service/src/collectors/serpapi-collector';
 import { transformSerpApiResponse } from '../../../serpapi-service/src/transformers/serpapi-transformer';
-import { SerpDataRepository } from '../../../serpapi-service/src/repositories/serpdata-repository';
 import { formatHotelQuery, formatDate } from '../../../serpapi-service/src/utils/formatters';
 import { mapSerpApiToHotel } from '../../../serpapi-service/src/utils/hotel-mapper';
+import { validate as validateUUID } from 'uuid';
+import { findCompetitors, storeCompetitors } from '../services/competitor-service';
 
 const userRepository = new UserRepository();
 const hotelRepository = new HotelRepository();
-const serpDataRepository = new SerpDataRepository();
 
-// Helper function to create date range for database queries
-function createDateRange(checkInDate: string, checkOutDate: string) {
-  const checkInDateObj = new Date(checkInDate);
-  const checkOutDateObj = new Date(checkOutDate);
+/**
+ * Recursively serialize Date objects to ISO strings for JSONB storage
+ */
+function serializeDates(obj: any): any {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
   
-  const checkInStart = new Date(checkInDateObj);
-  checkInStart.setHours(0, 0, 0, 0);
+  if (obj instanceof Date) {
+    return obj.toISOString();
+  }
   
-  const checkInEnd = new Date(checkInDateObj);
-  checkInEnd.setHours(23, 59, 59, 999);
+  if (Array.isArray(obj)) {
+    return obj.map(item => serializeDates(item));
+  }
   
-  const checkOutStart = new Date(checkOutDateObj);
-  checkOutStart.setHours(0, 0, 0, 0);
+  if (typeof obj === 'object') {
+    const serialized: any = {};
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        serialized[key] = serializeDates(obj[key]);
+      }
+    }
+    return serialized;
+  }
   
-  const checkOutEnd = new Date(checkOutDateObj);
-  checkOutEnd.setHours(23, 59, 59, 999);
-  
-  return { checkInStart, checkInEnd, checkOutStart, checkOutEnd };
+  return obj;
 }
 
-// Helper function to build query for finding existing SerpData
-function buildSerpDataQuery(
-  transformedData: any,
-  checkInStart: Date,
-  checkInEnd: Date,
-  checkOutStart: Date,
-  checkOutEnd: Date,
-  adultsCount: number
-) {
-  return {
-    $or: [
-      { property_token: transformedData.property_token },
-      { name: transformedData.name },
-    ],
-    'search_parameters.check_in_date': {
-      $gte: checkInStart,
-      $lte: checkInEnd,
-    },
-    'search_parameters.check_out_date': {
-      $gte: checkOutStart,
-      $lte: checkOutEnd,
-    },
-    'search_parameters.adults': adultsCount,
-  };
-}
-
-// Helper function to save SerpData to database
-async function saveSerpDataToDatabase(
-  transformedData: any,
-  checkInDate: string,
-  checkOutDate: string,
-  adultsCount: number
+// Async function to process competitors for a hotel
+async function processCompetitors(
+  hotelId: string,
+  hotelRating: number | null,
+  city?: string,
+  state?: string,
+  countryCode?: string
 ): Promise<void> {
   try {
-    const { checkInStart, checkInEnd, checkOutStart, checkOutEnd } = createDateRange(checkInDate, checkOutDate);
-    const query = buildSerpDataQuery(transformedData, checkInStart, checkInEnd, checkOutStart, checkOutEnd, adultsCount);
+    console.log('Processing competitors for hotel:', hotelId);
     
-    const existingData = await serpDataRepository.findOne(query);
+    // Find competitors
+    const competitorIds = await findCompetitors(
+      hotelId,
+      hotelRating,
+      city,
+      state,
+      countryCode
+    );
 
-    if (existingData) {
-      await serpDataRepository.findAndUpdate(query, transformedData);
-      console.log('SERP API data updated in database');
+    if (competitorIds.length > 0) {
+      // Store competitors
+      await storeCompetitors(hotelId, competitorIds);
+      console.log(`Stored ${competitorIds.length} competitors for hotel ${hotelId}`);
     } else {
-      await serpDataRepository.create(transformedData);
-      console.log('SERP API data saved to database');
+      console.log(`No competitors found for hotel ${hotelId}`);
     }
-  } catch (dbError: unknown) {
-    const errorMessage = dbError instanceof Error ? dbError.message : 'Unknown error';
-    console.log(`Failed to save SERP API data: ${errorMessage}`);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.log(`Competitor processing error: ${errorMessage}`);
+    // Don't throw - this is a background process
   }
 }
 
 // Async function to search hotel via SERP API and update hotel record
-async function searchAndUpdateHotelDetails(hotelName: string, hotelId: string, countryCode?: string, stateName?: string): Promise<void> {
+async function searchAndUpdateHotelDetails(hotelName: string, hotelId?: string, countryCode?: string, stateName?: string): Promise<void> {
   try {
     console.log('Now getting more details');
     
@@ -146,19 +138,25 @@ async function searchAndUpdateHotelDetails(hotelName: string, hotelId: string, c
       adults: 2,
     });
 
-    // Save to serpdata table
-    await saveSerpDataToDatabase(transformedData, formattedCheckIn, formattedCheckOut, 2);
+    // Ensure all Date objects are serialized before storing in JSONB fields
+    const serializedData = serializeDates(transformedData);
 
-    // Update hotel record with SERP API data if available
-    if (transformedData.name) {
+    // Extract raw property data for hotel mapping (use raw property to preserve phone and address)
+    const rawProperty = (ratesData as any)?.properties?.[0] || ratesData;
+    
+    // Update hotel record with SERP API data if available and hotelId exists
+    if (serializedData.name && hotelId) {
       // Update hotel in database using hotel repository create method with existingHotelId
       // The create method uses ON CONFLICT UPDATE, so this will update the existing hotel
+      // Use raw property data to ensure phone and address are preserved correctly
       await hotelRepository.create({
-        name: transformedData.name || '',
-        serpApiData: transformedData,
+        name: serializedData.name || '',
+        serpApiData: rawProperty, // Use raw property instead of transformed data to preserve phone/address
         existingHotelId: hotelId,
       });
       console.log('Hotel record updated with SERP API data');
+    } else if (serializedData.name && !hotelId) {
+      console.log('SERP API data saved, but hotel record not updated (no hotelId available)');
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -181,6 +179,7 @@ export class AuthController {
         name,
         businessEmail,
         country,
+        state,
         hotelName,
         phoneNumber,
         currentPMS,
@@ -189,8 +188,17 @@ export class AuthController {
         selectedHotel,
       } = req.body;
 
+      // Normalize email to lowercase and trim whitespace
+      const normalizedEmail = businessEmail?.trim().toLowerCase();
+      if (!normalizedEmail) {
+        return res.status(400).json({ 
+          error: 'Business email is required',
+          code: 'MISSING_EMAIL'
+        });
+      }
+
       // Check if user already exists
-      const existingUser = await userRepository.findByEmail(businessEmail);
+      const existingUser = await userRepository.findByEmail(normalizedEmail);
       if (existingUser) {
         return res.status(409).json({ 
           error: 'User with this business email already exists',
@@ -283,8 +291,9 @@ export class AuthController {
       // Create user (password will be hashed in repository)
       const user = await userRepository.create({
         name,
-        businessEmail,
+        businessEmail: normalizedEmail,
         country,
+        state,
         hotelName,
         phoneNumber,
         currentPMS,
@@ -300,21 +309,66 @@ export class AuthController {
       // Store refresh token
       await userRepository.addRefreshToken(user.id, tokens.refreshToken);
 
-      // Fire off parallel async SERP API search (don't wait for it)
-      if (hotelId && selectedHotel) {
+      // Fetch hotel data if hotelId exists
+      let hotel: Hotel | null = null;
+      if (hotelId) {
+        try {
+          hotel = await hotelRepository.findByHotelId(hotelId);
+        } catch (error) {
+          console.log('Could not fetch hotel data:', error);
+          // Continue without hotel data - not critical
+        }
+      }
+
+      // Fire off parallel async SERP API search after user registration (don't wait for it)
+      // This runs whether hotel was found or not, as long as selectedHotel exists
+      if (selectedHotel) {
         const { name: hotelNameFromSelection } = selectedHotel;
-        searchAndUpdateHotelDetails(hotelNameFromSelection, hotelId, country, req.body.state).catch((error) => {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-          console.log(`Background SERP API search error: ${errorMessage}`);
-        });
+        searchAndUpdateHotelDetails(hotelNameFromSelection, hotelId, country, req.body.state)
+          .then(() => {
+            // After SERP API search completes, process competitors
+            if (hotelId) {
+              // Get hotel data to extract city/state/rating
+              hotelRepository.findByHotelId(hotelId)
+                .then((hotelData) => {
+                  if (hotelData) {
+                    processCompetitors(
+                      hotelId,
+                      hotelData.overallRating || null,
+                      hotelData.city || undefined,
+                      req.body.state,
+                      country
+                    ).catch((error) => {
+                      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                      console.log(`Competitor processing error: ${errorMessage}`);
+                    });
+                  }
+                })
+                .catch((error) => {
+                  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                  console.log(`Failed to fetch hotel for competitor processing: ${errorMessage}`);
+                });
+            }
+          })
+          .catch((error) => {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            console.log(`Background SERP API search error: ${errorMessage}`);
+          });
       }
 
       // Return user data (exclude sensitive fields)
-      return res.status(201).json({
+      const response: any = {
         message: 'User registered successfully',
         user: sanitizeUser(user),
         tokens,
-      });
+      };
+
+      // Include hotel data if available
+      if (hotel) {
+        response.hotel = hotel;
+      }
+
+      return res.status(201).json(response);
     } catch (error: unknown) {
       // Handle PostgreSQL errors
       if (error && typeof error === 'object' && 'code' in error) {
@@ -368,9 +422,19 @@ export class AuthController {
     try {
       const { businessEmail, password } = req.body;
 
+      // Trim email to handle any whitespace issues
+      const trimmedEmail = businessEmail?.trim();
+      if (!trimmedEmail || !password) {
+        return res.status(400).json({ 
+          error: 'Email and password are required',
+          code: 'MISSING_CREDENTIALS'
+        });
+      }
+
       // Find user (password is included in query results)
-      const user = await userRepository.findByEmail(businessEmail);
+      const user = await userRepository.findByEmail(trimmedEmail);
       if (!user) {
+        console.log(`Login attempt failed: User not found for email: ${trimmedEmail}`);
         return res.status(401).json({ 
           error: 'Invalid credentials',
           code: 'INVALID_CREDENTIALS'
@@ -380,6 +444,7 @@ export class AuthController {
       // Verify password using shared utility
       const isPasswordValid = await comparePassword(password, user.password);
       if (!isPasswordValid) {
+        console.log(`Login attempt failed: Invalid password for email: ${trimmedEmail}`);
         return res.status(401).json({ 
           error: 'Invalid credentials',
           code: 'INVALID_CREDENTIALS'
@@ -394,12 +459,25 @@ export class AuthController {
       await userRepository.addRefreshToken(user.id, tokens.refreshToken);
 
       // Return user data (exclude sensitive fields)
+      const sanitizedUser = sanitizeUser(user);
+      // Ensure hotelId and state are always included in response (even if null/undefined)
       return res.json({
         message: 'Login successful',
-        user: sanitizeUser(user),
+        user: {
+          ...sanitizedUser,
+          hotelId: sanitizedUser.hotelId || null,
+          state: sanitizedUser.state || null,
+        },
         tokens,
       });
     } catch (error: unknown) {
+      // Log the full error for debugging
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      console.error('Login error:', errorMessage);
+      if (errorStack) {
+        console.error('Stack trace:', errorStack);
+      }
       
       // Handle PostgreSQL errors
       if (error && typeof error === 'object' && 'code' in error) {
@@ -412,6 +490,16 @@ export class AuthController {
           });
         }
 
+        // Column does not exist (likely state column missing)
+        if (error.code === '42703') {
+          console.error('Database column missing. Please run migration 010_add_state_column.sql');
+          return res.status(503).json({ 
+            error: 'Database schema outdated. Please run database migrations.',
+            code: 'DB_SCHEMA_OUTDATED',
+            details: 'The state column is missing. Run migration: pnpm run migration:010'
+          });
+        }
+
         // Connection errors
         if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
           return res.status(503).json({ 
@@ -421,9 +509,11 @@ export class AuthController {
         }
       }
       
+      const isDevelopment = process.env.NODE_ENV !== 'production';
       return res.status(500).json({ 
         error: 'Internal server error',
-        code: 'INTERNAL_ERROR'
+        code: 'INTERNAL_ERROR',
+        ...(isDevelopment && { details: errorMessage, stack: errorStack })
       });
     }
   }
@@ -524,18 +614,17 @@ export class AuthController {
   async getUser(req: AuthenticatedRequest, res: Response) {
     try {
       const { id } = req.params;
-      const userId = parseInt(id, 10);
 
-      // Validate numeric ID
-      if (isNaN(userId)) {
+      // Validate UUID format
+      if (!validateUUID(id)) {
         return res.status(400).json({ 
-          error: 'Invalid user ID',
+          error: 'Invalid user ID format',
           code: 'INVALID_ID'
         });
       }
 
       // Find user by ID
-      const user = await userRepository.findById(userId);
+      const user = await userRepository.findById(id);
       if (!user) {
         return res.status(404).json({ 
           error: 'User not found',
@@ -573,12 +662,11 @@ export class AuthController {
   async updateUser(req: AuthenticatedRequest, res: Response) {
     try {
       const { id } = req.params;
-      const userId = parseInt(id, 10);
 
-      // Validate numeric ID
-      if (isNaN(userId)) {
+      // Validate UUID format
+      if (!validateUUID(id)) {
         return res.status(400).json({ 
-          error: 'Invalid user ID',
+          error: 'Invalid user ID format',
           code: 'INVALID_ID'
         });
       }
@@ -591,7 +679,7 @@ export class AuthController {
       delete updateData.id; // Don't allow ID updates
 
       // Find and update user
-      const user = await userRepository.updateById(userId, updateData);
+      const user = await userRepository.updateById(id, updateData);
 
       if (!user) {
         return res.status(404).json({ 
@@ -629,6 +717,107 @@ export class AuthController {
       return res.status(500).json({ 
         error: 'Internal server error',
         code: 'INTERNAL_ERROR'
+      });
+    }
+  }
+
+  async getSuggestedCompetitors(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { hotelId } = req.params;
+
+      if (!hotelId) {
+        return res.status(400).json({ 
+          error: 'Hotel ID is required',
+          code: 'MISSING_HOTEL_ID'
+        });
+      }
+
+      // Get authenticated user
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({ 
+          error: 'Authentication required',
+          code: 'UNAUTHORIZED'
+        });
+      }
+
+      // Fetch user to get their hotelId
+      const user = await userRepository.findById(req.user.id);
+      if (!user) {
+        return res.status(404).json({ 
+          error: 'User not found',
+          code: 'USER_NOT_FOUND'
+        });
+      }
+
+      // Validate that the user has access to this hotel
+      if (!user.hotelId || user.hotelId !== hotelId) {
+        return res.status(403).json({ 
+          error: 'Access denied: You can only view suggested competitors for your own hotel',
+          code: 'ACCESS_DENIED'
+        });
+      }
+
+      // Fetch hotel with suggested_competitors
+      const hotel = await hotelRepository.findByHotelId(hotelId);
+      if (!hotel) {
+        return res.status(404).json({ 
+          error: 'Hotel not found',
+          code: 'HOTEL_NOT_FOUND'
+        });
+      }
+
+      // Get suggested competitor IDs
+      const suggestedCompetitorIds = hotel.suggestedCompetitors || [];
+
+      if (suggestedCompetitorIds.length === 0) {
+        return res.json({
+          success: true,
+          data: [],
+          count: 0
+        });
+      }
+
+      // Fetch full hotel details for each competitor
+      const competitors: Hotel[] = [];
+      for (const competitorId of suggestedCompetitorIds) {
+        try {
+          const competitor = await hotelRepository.findByHotelId(competitorId);
+          if (competitor) {
+            competitors.push(competitor);
+          }
+        } catch (error) {
+          // Log error but continue with other competitors
+          console.log(`Failed to fetch competitor ${competitorId}:`, error);
+        }
+      }
+
+      return res.json({
+        success: true,
+        data: competitors,
+        count: competitors.length
+      });
+    } catch (error: unknown) {
+      // Handle PostgreSQL errors
+      if (error && typeof error === 'object' && 'code' in error) {
+        if (error.code === '42P01') {
+          return res.status(503).json({ 
+            error: 'Database not initialized',
+            code: 'DB_NOT_INITIALIZED'
+          });
+        }
+        if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+          return res.status(503).json({ 
+            error: 'Database connection failed',
+            code: 'DB_CONNECTION_ERROR'
+          });
+        }
+      }
+      
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      return res.status(500).json({ 
+        error: 'Internal server error',
+        code: 'INTERNAL_ERROR',
+        message: errorMessage
       });
     }
   }

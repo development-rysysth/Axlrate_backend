@@ -97,6 +97,24 @@ router.use('/users', createProxyMiddleware({
   },
 }));
 
+// Hotel management routes (requires authentication)
+router.use('/hotels', createProxyMiddleware({
+  target: SERVICE_URLS.AUTH_SERVICE,
+  changeOrigin: true,
+  pathRewrite: { '^/api/v1/hotels': '/v1/hotels' },
+  logLevel: 'debug',
+  onProxyReq: (proxyReq, req) => {
+    console.log(`[PROXY] Forwarding ${req.method} to Auth Hotels: ${proxyReq.path}`);
+    forwardProxyBody(proxyReq, req);
+  },
+  onError: (err, req: Request, res: Response) => {
+    console.error('[PROXY ERROR] Auth Service:', err.message);
+    if (!res.headersSent) {
+      res.status(503).json({ error: 'Auth service unavailable', details: err.message });
+    }
+  },
+}));
+
 // Legacy /auth/* routes (for backward compatibility)
 router.use(
   '/auth',

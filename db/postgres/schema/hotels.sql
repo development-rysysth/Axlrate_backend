@@ -90,7 +90,11 @@ CREATE TABLE IF NOT EXISTS hotels (
     
     -- JSON fields for flexible data
     nearby_places JSONB NULL,
-    amenities_json JSONB NULL
+    amenities_json JSONB NULL,
+    
+    -- Competitors
+    competitors TEXT[] DEFAULT '{}',
+    suggested_competitors TEXT[] DEFAULT '{}'
 ) TABLESPACE pg_default;
 
 -- Indexes
@@ -98,3 +102,5 @@ CREATE INDEX IF NOT EXISTS idx_hotels_hotel_id ON hotels(hotel_id);
 CREATE INDEX IF NOT EXISTS idx_hotels_hotel_name ON hotels(hotel_name);
 CREATE INDEX IF NOT EXISTS idx_hotels_city ON hotels(city);
 CREATE INDEX IF NOT EXISTS idx_hotels_gps ON hotels(gps_lat, gps_lon);
+CREATE INDEX IF NOT EXISTS idx_hotels_competitors ON hotels USING GIN(competitors);
+CREATE INDEX IF NOT EXISTS idx_hotels_suggested_competitors ON hotels USING GIN(suggested_competitors);

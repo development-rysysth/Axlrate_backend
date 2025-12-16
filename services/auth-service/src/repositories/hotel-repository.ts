@@ -2,6 +2,72 @@ import { getPool } from '../config/database';
 import { Hotel } from '../../../../shared';
 import { mapSerpApiToHotel, HotelInsertData, generateHotelId } from '../../../serpapi-service/src/utils/hotel-mapper';
 
+/**
+ * Helper function to serialize Date objects and other non-JSON-serializable values
+ * for PostgreSQL JSONB fields. Recursively converts Date objects to ISO strings.
+ * Also handles undefined values and ensures the result is valid JSON.
+ */
+function serializeForJSONB(value: any): any {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  
+  // If it's already a string, try to parse it first to ensure it's valid JSON
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return serializeForJSONB(parsed);
+    } catch {
+      // If it's not valid JSON, return as-is (might be a plain string)
+      return value;
+    }
+  }
+  
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  
+  if (Array.isArray(value)) {
+    return value.map(item => serializeForJSONB(item));
+  }
+  
+  if (typeof value === 'object') {
+    // Handle special objects that might cause issues
+    if (value.constructor && value.constructor.name !== 'Object' && value.constructor.name !== 'Array') {
+      // For non-plain objects, try to convert to plain object
+      try {
+        return JSON.parse(JSON.stringify(value, (key, val) => {
+          if (val instanceof Date) {
+            return val.toISOString();
+          }
+          if (val === undefined) {
+            return null;
+          }
+          return val;
+        }));
+      } catch {
+        return String(value);
+      }
+    }
+    
+    const serialized: any = {};
+    for (const key in value) {
+      if (value.hasOwnProperty(key)) {
+        const val = value[key];
+        // Skip undefined values
+        if (val === undefined) {
+          continue;
+        }
+        serialized[key] = serializeForJSONB(val);
+      }
+    }
+    return serialized;
+  }
+  
+  // For primitive types, return as-is
+  return value;
+}
+
 export interface CreateHotelData {
   name: string;
   gpsLatitude?: number;
@@ -26,11 +92,25 @@ export class HotelRepository {
    */
   async findByHotelId(hotelId: string): Promise<Hotel | null> {
     const query = `
-      SELECT hotel_id as "hotelId", hotel_name as name, phone, address_full as address,
-             gps_lat as "gpsLatitude", gps_lon as "gpsLongitude",
-             star_rating as "hotelClass", review_score as "overallRating",
-             review_count as "reviewsCount",
-             check_in_time as "checkInTime", check_out_time as "checkOutTime"
+      SELECT 
+        hotel_id as "hotelId", 
+        hotel_name as name, 
+        phone, 
+        address_full as address,
+        city,
+        zip_code as "zipCode",
+        gps_lat as "gpsLatitude", 
+        gps_lon as "gpsLongitude",
+        star_rating as "hotelClass", 
+        review_score as "overallRating",
+        review_count as "reviewsCount",
+        review_tags as "reviewTags",
+        check_in_time as "checkInTime", 
+        check_out_time as "checkOutTime",
+        nearby_places as "nearbyPlaces",
+        amenities_json as "amenitiesJson",
+        competitors,
+        suggested_competitors as "suggestedCompetitors"
       FROM hotels
       WHERE hotel_id = $1
       LIMIT 1
@@ -196,7 +276,8 @@ export class HotelRepository {
       VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9,
         $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25,
-        $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42,
+        $26::jsonb, $27::jsonb,
+        $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42,
         $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59,
         $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71, $72, $73, $74, $75, $76, $77,
         $78, $79, $80
@@ -215,8 +296,8 @@ export class HotelRepository {
         review_tags = EXCLUDED.review_tags,
         check_in_time = EXCLUDED.check_in_time,
         check_out_time = EXCLUDED.check_out_time,
-        nearby_places = EXCLUDED.nearby_places,
-        amenities_json = EXCLUDED.amenities_json,
+        nearby_places = EXCLUDED.nearby_places::jsonb,
+        amenities_json = EXCLUDED.amenities_json::jsonb,
         amenity_wi_fi = EXCLUDED.amenity_wi_fi,
         amenity_restaurant = EXCLUDED.amenity_restaurant,
         amenity_breakfast = EXCLUDED.amenity_breakfast,
@@ -281,11 +362,23 @@ export class HotelRepository {
         amenity_dogs_allowed = EXCLUDED.amenity_dogs_allowed,
         amenity_cats_allowed = EXCLUDED.amenity_cats_allowed,
         amenity_bar = EXCLUDED.amenity_bar
-      RETURNING hotel_id as "hotelId", hotel_name as name, phone, address_full as address,
-                gps_lat as "gpsLatitude", gps_lon as "gpsLongitude",
-                star_rating as "hotelClass", review_score as "overallRating",
-                review_count as "reviewsCount",
-                check_in_time as "checkInTime", check_out_time as "checkOutTime"
+      RETURNING 
+        hotel_id as "hotelId", 
+        hotel_name as name, 
+        phone, 
+        address_full as address,
+        city,
+        zip_code as "zipCode",
+        gps_lat as "gpsLatitude", 
+        gps_lon as "gpsLongitude",
+        star_rating as "hotelClass", 
+        review_score as "overallRating",
+        review_count as "reviewsCount",
+        review_tags as "reviewTags",
+        check_in_time as "checkInTime", 
+        check_out_time as "checkOutTime",
+        nearby_places as "nearbyPlaces",
+        amenities_json as "amenitiesJson"
     `;
 
     const values = [
@@ -314,8 +407,9 @@ export class HotelRepository {
       hotelInsertData.amenity_accessible,
       hotelInsertData.amenity_air_conditioning,
       hotelInsertData.amenity_pet_friendly,
-      hotelInsertData.nearby_places,
-      hotelInsertData.amenities_json,
+      // JSONB fields - serialize and stringify to ensure valid JSON
+      hotelInsertData.nearby_places ? JSON.stringify(serializeForJSONB(hotelInsertData.nearby_places)) : null,
+      hotelInsertData.amenities_json ? JSON.stringify(serializeForJSONB(hotelInsertData.amenities_json)) : null,
       hotelInsertData.amenity_wi_fi_in_public_areas,
       hotelInsertData.amenity_public_internet_workstation,
       hotelInsertData.amenity_table_service,
@@ -371,7 +465,45 @@ export class HotelRepository {
       hotelInsertData.check_out_time,
     ];
 
-    const result = await this.getPool().query(query, values);
-    return result.rows[0];
+    try {
+      const result = await this.getPool().query(query, values);
+      return result.rows[0];
+    } catch (error: any) {
+      // Enhanced error logging for JSONB issues
+      if (error.message && error.message.includes('invalid input syntax for type json')) {
+        console.error('JSONB serialization error:');
+        console.error('nearby_places:', JSON.stringify(hotelInsertData.nearby_places, null, 2));
+        console.error('amenities_json:', JSON.stringify(hotelInsertData.amenities_json, null, 2));
+        console.error('Serialized nearby_places:', hotelInsertData.nearby_places ? JSON.stringify(serializeForJSONB(hotelInsertData.nearby_places)) : null);
+        console.error('Serialized amenities_json:', hotelInsertData.amenities_json ? JSON.stringify(serializeForJSONB(hotelInsertData.amenities_json)) : null);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Update competitors for a hotel (for accepted competitors)
+   */
+  async updateCompetitors(hotelId: string, competitorIds: string[]): Promise<void> {
+    const query = `
+      UPDATE hotels
+      SET competitors = $1
+      WHERE hotel_id = $2
+    `;
+
+    await this.getPool().query(query, [competitorIds, hotelId]);
+  }
+
+  /**
+   * Update suggested competitors for a hotel
+   */
+  async updateSuggestedCompetitors(hotelId: string, competitorIds: string[]): Promise<void> {
+    const query = `
+      UPDATE hotels
+      SET suggested_competitors = $1
+      WHERE hotel_id = $2
+    `;
+
+    await this.getPool().query(query, [competitorIds, hotelId]);
   }
 }

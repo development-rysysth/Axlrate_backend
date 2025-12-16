@@ -1,7 +1,8 @@
 -- Users table schema
 -- Updated to reference hotels by hotel_id (VARCHAR) instead of id (INTEGER)
+-- Updated to use UUID for user IDs instead of SERIAL for better security and scalability
 CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(100) NOT NULL,
     business_email VARCHAR(255) NOT NULL UNIQUE,
     country VARCHAR(100) NOT NULL,

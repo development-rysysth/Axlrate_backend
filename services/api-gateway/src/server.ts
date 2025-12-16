@@ -211,6 +211,7 @@ app.get('/', (req, res) => {
       aggregator: '/api/v1/aggregator',
       export: '/api/v1/export',
       hotelInfo: '/api/v1/hotel-info',
+      hotels: '/api/v1/hotels',
       health: '/health',
     },
   });
