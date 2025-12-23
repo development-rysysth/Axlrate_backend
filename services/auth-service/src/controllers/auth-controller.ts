@@ -9,65 +9,28 @@ import {
 } from '../../../../shared';
 import { UserRepository } from '../repositories/user-repository';
 import { HotelRepository } from '../repositories/hotel-repository';
-import { JwtService } from '../services/jwt-service';
+import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../../../../shared/utils/jwt';
 import { comparePassword } from '../../../../shared/utils/password';
-import { fetchHotelRates, searchHotelWithLocation } from '../../../serpapi-service/src/collectors/serpapi-collector';
-import { transformSerpApiResponse } from '../../../serpapi-service/src/transformers/serpapi-transformer';
-import { formatHotelQuery, formatDate } from '../../../serpapi-service/src/utils/formatters';
-import { mapSerpApiToHotel } from '../../../serpapi-service/src/utils/hotel-mapper';
 import { validate as validateUUID } from 'uuid';
 import { findCompetitors, storeCompetitors } from '../services/competitor-service';
 
 const userRepository = new UserRepository();
 const hotelRepository = new HotelRepository();
 
-/**
- * Recursively serialize Date objects to ISO strings for JSONB storage
- */
-function serializeDates(obj: any): any {
-  if (obj === null || obj === undefined) {
-    return obj;
-  }
-  
-  if (obj instanceof Date) {
-    return obj.toISOString();
-  }
-  
-  if (Array.isArray(obj)) {
-    return obj.map(item => serializeDates(item));
-  }
-  
-  if (typeof obj === 'object') {
-    const serialized: any = {};
-    for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
-        serialized[key] = serializeDates(obj[key]);
-      }
-    }
-    return serialized;
-  }
-  
-  return obj;
-}
-
-// Async function to process competitors for a hotel
+// Async function to process competitors for a hotel (database-only)
 async function processCompetitors(
   hotelId: string,
-  hotelRating: number | null,
-  city?: string,
-  state?: string,
-  countryCode?: string
+  hotelClass: number | null,
+  city?: string
 ): Promise<void> {
   try {
     console.log('Processing competitors for hotel:', hotelId);
     
-    // Find competitors
+    // Find competitors (database-only)
     const competitorIds = await findCompetitors(
       hotelId,
-      hotelRating,
-      city,
-      state,
-      countryCode
+      hotelClass,
+      city
     );
 
     if (competitorIds.length > 0) {
@@ -81,86 +44,6 @@ async function processCompetitors(
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.log(`Competitor processing error: ${errorMessage}`);
     // Don't throw - this is a background process
-  }
-}
-
-// Async function to search hotel via SERP API and update hotel record
-async function searchAndUpdateHotelDetails(hotelName: string, hotelId?: string, countryCode?: string, stateName?: string): Promise<void> {
-  try {
-    console.log('Now getting more details');
-    
-    // Use default dates (today + 7 days)
-    const checkInDate = new Date();
-    checkInDate.setDate(checkInDate.getDate() + 1);
-    const checkOutDate = new Date(checkInDate);
-    checkOutDate.setDate(checkOutDate.getDate() + 7);
-
-    const formattedCheckIn = formatDate(checkInDate.toISOString().split('T')[0]);
-    const formattedCheckOut = formatDate(checkOutDate.toISOString().split('T')[0]);
-
-    let ratesData: any;
-    let hotelQuery: string;
-
-    // Use searchHotelWithLocation if we have country and state, otherwise use fetchHotelRates
-    if (countryCode && stateName) {
-      ratesData = await searchHotelWithLocation({
-        hotelName,
-        countryCode,
-        stateName,
-        checkInDate: formattedCheckIn,
-        checkOutDate: formattedCheckOut,
-        hl: 'en',
-        currency: 'USD',
-        adults: 2,
-      });
-      hotelQuery = `${hotelName} ${stateName}`;
-    } else {
-      hotelQuery = formatHotelQuery(hotelName);
-      ratesData = await fetchHotelRates({
-        hotelQuery,
-        checkInDate: formattedCheckIn,
-        checkOutDate: formattedCheckOut,
-        gl: countryCode?.toLowerCase() || 'us',
-        hl: 'en',
-        currency: 'USD',
-        adults: 2,
-      });
-    }
-
-    // Transform response
-    const transformedData = transformSerpApiResponse(ratesData, {
-      hotelQuery,
-      checkInDate: formattedCheckIn,
-      checkOutDate: formattedCheckOut,
-      gl: countryCode?.toLowerCase() || 'us',
-      hl: 'en',
-      currency: 'USD',
-      adults: 2,
-    });
-
-    // Ensure all Date objects are serialized before storing in JSONB fields
-    const serializedData = serializeDates(transformedData);
-
-    // Extract raw property data for hotel mapping (use raw property to preserve phone and address)
-    const rawProperty = (ratesData as any)?.properties?.[0] || ratesData;
-    
-    // Update hotel record with SERP API data if available and hotelId exists
-    if (serializedData.name && hotelId) {
-      // Update hotel in database using hotel repository create method with existingHotelId
-      // The create method uses ON CONFLICT UPDATE, so this will update the existing hotel
-      // Use raw property data to ensure phone and address are preserved correctly
-      await hotelRepository.create({
-        name: serializedData.name || '',
-        serpApiData: rawProperty, // Use raw property instead of transformed data to preserve phone/address
-        existingHotelId: hotelId,
-      });
-      console.log('Hotel record updated with SERP API data');
-    } else if (serializedData.name && !hotelId) {
-      console.log('SERP API data saved, but hotel record not updated (no hotelId available)');
-    }
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.log(`Background SERP API search failed: ${errorMessage}`);
   }
 }
 
@@ -185,7 +68,7 @@ export class AuthController {
         currentPMS,
         businessType,
         password,
-        selectedHotel,
+        hotelId,
       } = req.body;
 
       // Normalize email to lowercase and trim whitespace
@@ -206,86 +89,18 @@ export class AuthController {
         });
       }
 
-      // Handle hotel registration/mapping
-      let hotelId: string | undefined = undefined;
-      
-      if (selectedHotel && selectedHotel.gps_coordinates) {
-        console.log('Searching hotel');
-        
-        const { 
-          name: hotelNameFromSelection, 
-          gps_coordinates,
-          hotel_class
-        } = selectedHotel;
-        const { latitude, longitude } = gps_coordinates;
-
-        // Validate coordinates are valid numbers
-        if (typeof latitude !== 'number' || typeof longitude !== 'number' || 
-            isNaN(latitude) || isNaN(longitude)) {
-          return res.status(400).json({ 
-            error: 'Invalid GPS coordinates: latitude and longitude must be valid numbers',
-            code: 'INVALID_COORDINATES'
+      // Validate hotelId if provided
+      let validatedHotelId: string | undefined = undefined;
+      if (hotelId) {
+        const hotel = await hotelRepository.findByHotelId(hotelId);
+        if (!hotel) {
+          return res.status(404).json({ 
+            error: 'Hotel not found',
+            code: 'HOTEL_NOT_FOUND',
+            message: 'The provided hotel ID does not exist in the database'
           });
         }
-
-        // Generate hotel ID first (deterministic based on name + coordinates)
-        const generatedHotelId = hotelRepository.generateHotelId(
-          hotelNameFromSelection,
-          latitude,
-          longitude
-        );
-
-        // Check if hotel with this ID already exists
-        try {
-          const existingHotel = await hotelRepository.findByHotelId(generatedHotelId);
-
-          if (existingHotel) {
-            hotelId = existingHotel.hotelId;
-            console.log('Hotel found');
-          } else {
-            console.log('Hotel not found');
-            // Create new hotel with static values only (not using serpApiData)
-            try {
-              const newHotel = await hotelRepository.create({
-                name: hotelNameFromSelection,
-                gpsLatitude: latitude,
-                gpsLongitude: longitude,
-                hotelClass: hotel_class,
-              });
-              hotelId = newHotel.hotelId;
-              console.log('Register hotel');
-            } catch (hotelError: unknown) {
-              // Handle unique constraint violation (race condition)
-              if (hotelError && typeof hotelError === 'object' && 'code' in hotelError && hotelError.code === '23505') {
-                // Hotel was created by another request, try to find it by ID
-                const foundHotel = await hotelRepository.findByHotelId(generatedHotelId);
-                if (foundHotel) {
-                  hotelId = foundHotel.hotelId;
-                } else {
-                  return res.status(500).json({
-                    error: 'Failed to register hotel',
-                    message: 'Hotel registration failed due to a database constraint violation. Please try again.',
-                    code: 'HOTEL_REGISTRATION_FAILED'
-                  });
-                }
-              } else {
-                const errorMessage = hotelError instanceof Error ? hotelError.message : 'Unknown error occurred';
-                return res.status(500).json({
-                  error: 'Failed to register hotel',
-                  message: `Hotel registration failed: ${errorMessage}. Please check the hotel data and try again.`,
-                  code: 'HOTEL_REGISTRATION_FAILED'
-                });
-              }
-            }
-          }
-        } catch (hotelError: unknown) {
-          const errorMessage = hotelError instanceof Error ? hotelError.message : 'Unknown error occurred';
-          return res.status(500).json({
-            error: 'Failed to register hotel',
-            message: `Hotel registration failed: ${errorMessage}. Please check the hotel data and try again.`,
-            code: 'HOTEL_REGISTRATION_FAILED'
-          });
-        }
+        validatedHotelId = hotelId;
       }
 
       // Create user (password will be hashed in repository)
@@ -299,68 +114,62 @@ export class AuthController {
         currentPMS,
         businessType,
         password,
-        hotelId,
+        hotelId: validatedHotelId,
       });
 
       // Generate tokens
       const tokenPayload = { id: user.id, businessEmail: user.businessEmail };
-      const tokens = JwtService.generateTokens(tokenPayload);
+      const tokens = {
+        accessToken: generateAccessToken(tokenPayload),
+        refreshToken: generateRefreshToken(tokenPayload),
+      };
 
       // Store refresh token
       await userRepository.addRefreshToken(user.id, tokens.refreshToken);
 
       // Fetch hotel data if hotelId exists
       let hotel: Hotel | null = null;
-      if (hotelId) {
+      if (validatedHotelId) {
         try {
-          hotel = await hotelRepository.findByHotelId(hotelId);
+          hotel = await hotelRepository.findByHotelId(validatedHotelId);
         } catch (error) {
           console.log('Could not fetch hotel data:', error);
           // Continue without hotel data - not critical
         }
       }
 
-      // Fire off parallel async SERP API search after user registration (don't wait for it)
-      // This runs whether hotel was found or not, as long as selectedHotel exists
-      if (selectedHotel) {
-        const { name: hotelNameFromSelection } = selectedHotel;
-        searchAndUpdateHotelDetails(hotelNameFromSelection, hotelId, country, req.body.state)
-          .then(() => {
-            // After SERP API search completes, process competitors
-            if (hotelId) {
-              // Get hotel data to extract city/state/rating
-              hotelRepository.findByHotelId(hotelId)
-                .then((hotelData) => {
-                  if (hotelData) {
-                    processCompetitors(
-                      hotelId,
-                      hotelData.overallRating || null,
-                      hotelData.city || undefined,
-                      req.body.state,
-                      country
-                    ).catch((error) => {
-                      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                      console.log(`Competitor processing error: ${errorMessage}`);
-                    });
-                  }
-                })
-                .catch((error) => {
-                  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                  console.log(`Failed to fetch hotel for competitor processing: ${errorMessage}`);
-                });
-            }
-          })
-          .catch((error) => {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            console.log(`Background SERP API search error: ${errorMessage}`);
-          });
+      // Process competitors in background (database-only, non-blocking)
+      if (validatedHotelId && hotel) {
+        processCompetitors(
+          validatedHotelId,
+          hotel.hotelClass || null,
+          hotel.city || undefined
+        ).catch((error) => {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          console.log(`Competitor processing error: ${errorMessage}`);
+        });
       }
 
-      // Return user data (exclude sensitive fields)
+      // Return user data with only required fields
       const response: any = {
         message: 'User registered successfully',
-        user: sanitizeUser(user),
-        tokens,
+        user: {
+          id: user.id,
+          email: user.businessEmail,
+          name: user.name,
+          hotelName: user.hotelName,
+          hotelId: user.hotelId || null,
+          phoneNumber: user.phoneNumber,
+          country: user.country,
+          currentPMS: user.currentPMS,
+          businessType: user.businessType,
+          numberOfRooms: user.numberOfRooms,
+          state: user.state || null,
+        },
+        tokens: {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+        },
       };
 
       // Include hotel data if available
@@ -453,7 +262,10 @@ export class AuthController {
 
       // Generate tokens
       const tokenPayload = { id: user.id, businessEmail: user.businessEmail };
-      const tokens = JwtService.generateTokens(tokenPayload);
+      const tokens = {
+        accessToken: generateAccessToken(tokenPayload),
+        refreshToken: generateRefreshToken(tokenPayload),
+      };
 
       // Store refresh token
       await userRepository.addRefreshToken(user.id, tokens.refreshToken);
@@ -523,7 +335,7 @@ export class AuthController {
       const { refreshToken } = req.body;
 
       // Verify refresh token
-      const decoded = JwtService.verifyRefreshToken(refreshToken);
+      const decoded = verifyRefreshToken(refreshToken);
 
       // Find user and check if refresh token exists in their tokens array
       const user = await userRepository.findById(decoded.id);
@@ -536,7 +348,7 @@ export class AuthController {
 
       // Generate new access token
       const tokenPayload = { id: user.id, businessEmail: user.businessEmail };
-      const newAccessToken = JwtService.generateAccessToken(tokenPayload);
+      const newAccessToken = generateAccessToken(tokenPayload);
 
       return res.json({
         accessToken: newAccessToken,
@@ -607,6 +419,196 @@ export class AuthController {
       return res.status(500).json({ 
         error: 'Internal server error',
         code: 'INTERNAL_ERROR'
+      });
+    }
+  }
+
+  async searchHotels(req: Request, res: Response) {
+    try {
+      const searchTerm = req.query.q as string;
+      const page = parseInt(req.query.page as string, 10) || 1;
+      const pageSize = parseInt(req.query.pageSize as string, 10) || 20;
+      const city = req.query.city as string | undefined;
+      const country = req.query.country as string | undefined;
+      const state = req.query.state as string | undefined;
+
+      if (!searchTerm || searchTerm.trim().length === 0) {
+        return res.status(400).json({ 
+          error: 'Search query parameter (q) is required',
+          code: 'MISSING_SEARCH_QUERY'
+        });
+      }
+
+      // Validate pagination
+      if (page < 1) {
+        return res.status(400).json({ 
+          error: 'Page must be greater than 0',
+          code: 'INVALID_PAGE'
+        });
+      }
+
+      if (pageSize < 1 || pageSize > 100) {
+        return res.status(400).json({ 
+          error: 'Page size must be between 1 and 100',
+          code: 'INVALID_PAGE_SIZE'
+        });
+      }
+
+      const { hotels, total } = await hotelRepository.searchHotels(
+        searchTerm.trim(),
+        page,
+        pageSize,
+        city,
+        country,
+        state
+      );
+      const totalPages = Math.ceil(total / pageSize);
+
+      return res.json({
+        success: true,
+        data: hotels,
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages
+        },
+        searchTerm: searchTerm.trim(),
+        filters: {
+          ...(city && { city }),
+          ...(country && { country }),
+          ...(state && { state })
+        }
+      });
+    } catch (error: unknown) {
+      // Log the error for debugging
+      console.error('searchHotels error:', error);
+      
+      // Handle PostgreSQL errors
+      if (error && typeof error === 'object' && 'code' in error) {
+        if (error.code === '42P01') {
+          console.error('Table does not exist - hotels table may not be created');
+          return res.status(503).json({ 
+            error: 'Database not initialized',
+            code: 'DB_NOT_INITIALIZED',
+            message: 'Hotels table does not exist. Please run database migrations.'
+          });
+        }
+        if (error.code === '42703') {
+          console.error('Column does not exist - schema mismatch');
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          return res.status(503).json({ 
+            error: 'Database schema mismatch',
+            code: 'DB_SCHEMA_MISMATCH',
+            message: `Column not found: ${errorMessage}. Please update database schema.`
+          });
+        }
+        if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+          console.error('Database connection failed');
+          return res.status(503).json({ 
+            error: 'Database connection failed',
+            code: 'DB_CONNECTION_ERROR',
+            message: 'Unable to connect to database. Please check database configuration.'
+          });
+        }
+      }
+      
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      console.error('Unexpected error:', errorMessage, errorStack);
+      
+      return res.status(500).json({ 
+        error: 'Internal server error',
+        code: 'INTERNAL_ERROR',
+        message: errorMessage,
+        ...(process.env.NODE_ENV !== 'production' && { stack: errorStack })
+      });
+    }
+  }
+
+  async getHotelsByCity(req: Request, res: Response) {
+    try {
+      const city = req.query.city as string;
+      const page = parseInt(req.query.page as string, 10) || 1;
+      const pageSize = parseInt(req.query.pageSize as string, 10) || 20;
+
+      if (!city) {
+        return res.status(400).json({ 
+          error: 'City parameter is required',
+          code: 'MISSING_CITY'
+        });
+      }
+
+      // Validate pagination
+      if (page < 1) {
+        return res.status(400).json({ 
+          error: 'Page must be greater than 0',
+          code: 'INVALID_PAGE'
+        });
+      }
+
+      if (pageSize < 1 || pageSize > 100) {
+        return res.status(400).json({ 
+          error: 'Page size must be between 1 and 100',
+          code: 'INVALID_PAGE_SIZE'
+        });
+      }
+
+      const { hotels, total } = await hotelRepository.findByCity(city, page, pageSize);
+      const totalPages = Math.ceil(total / pageSize);
+
+      return res.json({
+        success: true,
+        data: hotels,
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages
+        }
+      });
+    } catch (error: unknown) {
+      // Log the error for debugging
+      console.error('getHotelsByCity error:', error);
+      
+      // Handle PostgreSQL errors
+      if (error && typeof error === 'object' && 'code' in error) {
+        if (error.code === '42P01') {
+          console.error('Table does not exist - hotels table may not be created');
+          return res.status(503).json({ 
+            error: 'Database not initialized',
+            code: 'DB_NOT_INITIALIZED',
+            message: 'Hotels table does not exist. Please run database migrations.'
+          });
+        }
+        if (error.code === '42703') {
+          console.error('Column does not exist - schema mismatch');
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          return res.status(503).json({ 
+            error: 'Database schema mismatch',
+            code: 'DB_SCHEMA_MISMATCH',
+            message: `Column not found: ${errorMessage}. Please update database schema.`
+          });
+        }
+        if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+          console.error('Database connection failed');
+          return res.status(503).json({ 
+            error: 'Database connection failed',
+            code: 'DB_CONNECTION_ERROR',
+            message: 'Unable to connect to database. Please check database configuration.'
+          });
+        }
+      }
+      
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      console.error('Unexpected error:', errorMessage, errorStack);
+      
+      return res.status(500).json({ 
+        error: 'Internal server error',
+        code: 'INTERNAL_ERROR',
+        message: errorMessage,
+        ...(process.env.NODE_ENV !== 'production' && { stack: errorStack })
       });
     }
   }
@@ -813,6 +815,503 @@ export class AuthController {
         }
       }
       
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      return res.status(500).json({ 
+        error: 'Internal server error',
+        code: 'INTERNAL_ERROR',
+        message: errorMessage
+      });
+    }
+  }
+
+  async getCompetitors(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { hotelId } = req.params;
+      const { type } = req.query;
+
+      if (!hotelId) {
+        return res.status(400).json({ 
+          error: 'Hotel ID is required',
+          code: 'MISSING_HOTEL_ID'
+        });
+      }
+
+      // Get authenticated user
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({ 
+          error: 'Authentication required',
+          code: 'UNAUTHORIZED'
+        });
+      }
+
+      // Fetch user to get their hotelId
+      const user = await userRepository.findById(req.user.id);
+      if (!user) {
+        return res.status(404).json({ 
+          error: 'User not found',
+          code: 'USER_NOT_FOUND'
+        });
+      }
+
+      // Validate that the user has access to this hotel
+      if (!user.hotelId || user.hotelId !== hotelId) {
+        return res.status(403).json({ 
+          error: 'Access denied: You can only view competitors for your own hotel',
+          code: 'ACCESS_DENIED'
+        });
+      }
+
+      // Fetch hotel
+      const hotel = await hotelRepository.findByHotelId(hotelId);
+      if (!hotel) {
+        return res.status(404).json({ 
+          error: 'Hotel not found',
+          code: 'HOTEL_NOT_FOUND'
+        });
+      }
+
+      // Get competitors
+      let competitors = hotel.competitors || [];
+
+      // Filter by type if specified
+      if (type === 'primary' || type === 'secondary') {
+        competitors = competitors.filter(c => c.type === type);
+      }
+
+      // Fetch full hotel details for each competitor
+      const competitorDetails: Hotel[] = [];
+      for (const competitor of competitors) {
+        try {
+          const competitorHotel = await hotelRepository.findByHotelId(competitor.hotelId);
+          if (competitorHotel) {
+            competitorDetails.push(competitorHotel);
+          }
+        } catch (error) {
+          console.log(`Failed to fetch competitor ${competitor.hotelId}:`, error);
+        }
+      }
+
+      // Return grouped by type if no filter
+      if (!type) {
+        const primary = competitors.filter(c => c.type === 'primary').map(c => c.hotelId);
+        const secondary = competitors.filter(c => c.type === 'secondary').map(c => c.hotelId);
+        
+        return res.json({
+          success: true,
+          data: {
+            primary: competitorDetails.filter(h => primary.includes(h.hotelId)),
+            secondary: competitorDetails.filter(h => secondary.includes(h.hotelId))
+          },
+          count: competitorDetails.length
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: competitorDetails,
+        count: competitorDetails.length
+      });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      return res.status(500).json({ 
+        error: 'Internal server error',
+        code: 'INTERNAL_ERROR',
+        message: errorMessage
+      });
+    }
+  }
+
+  async addCompetitor(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { hotelId } = req.params;
+      const { 
+        // New format (recommended)
+        name,
+        latitude,
+        longitude,
+        address,
+        phone,
+        hotelClass,
+        serpApiData,
+        type,
+        // Backward compatibility (old format)
+        competitorId
+      } = req.body;
+
+      if (!hotelId) {
+        return res.status(400).json({ 
+          error: 'Hotel ID is required',
+          code: 'MISSING_HOTEL_ID'
+        });
+      }
+
+      if (!type || (type !== 'primary' && type !== 'secondary')) {
+        return res.status(400).json({ 
+          error: 'Type must be "primary" or "secondary"',
+          code: 'INVALID_TYPE'
+        });
+      }
+
+      // Get authenticated user
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({ 
+          error: 'Authentication required',
+          code: 'UNAUTHORIZED'
+        });
+      }
+
+      // Fetch user to get their hotelId
+      const user = await userRepository.findById(req.user.id);
+      if (!user) {
+        return res.status(404).json({ 
+          error: 'User not found',
+          code: 'USER_NOT_FOUND'
+        });
+      }
+
+      // Validate that the user has access to this hotel
+      if (!user.hotelId || user.hotelId !== hotelId) {
+        return res.status(403).json({ 
+          error: 'Access denied: You can only manage competitors for your own hotel',
+          code: 'ACCESS_DENIED'
+        });
+      }
+
+      // Verify hotel exists
+      const hotel = await hotelRepository.findByHotelId(hotelId);
+      if (!hotel) {
+        return res.status(404).json({ 
+          error: 'Hotel not found',
+          code: 'HOTEL_NOT_FOUND'
+        });
+      }
+
+      // Determine which format is being used and get competitor hotel ID
+      let finalCompetitorId: string;
+
+      // Check if using new format (name + coordinates)
+      if (name && latitude !== undefined && longitude !== undefined) {
+        // Validate GPS coordinates
+        if (typeof latitude !== 'number' || typeof longitude !== 'number' || 
+            isNaN(latitude) || isNaN(longitude)) {
+          return res.status(400).json({ 
+            error: 'Invalid GPS coordinates: latitude and longitude must be valid numbers',
+            code: 'INVALID_COORDINATES'
+          });
+        }
+
+        // Generate hotel ID from name and coordinates
+        const generatedHotelId = hotelRepository.generateHotelId(name, latitude, longitude);
+
+        // Check if competitor hotel already exists
+        let competitorHotel = await hotelRepository.findByHotelId(generatedHotelId);
+
+        if (!competitorHotel) {
+          // Create new hotel for competitor (following same flow as onboarding)
+          try {
+            competitorHotel = await hotelRepository.create({
+              name,
+              gpsLatitude: latitude,
+              gpsLongitude: longitude,
+              address,
+              phone,
+              hotelClass,
+              serpApiData,
+              existingHotelId: generatedHotelId,
+            });
+            console.log('Created new competitor hotel:', generatedHotelId);
+          } catch (hotelError: unknown) {
+            // Handle unique constraint violation (race condition)
+            if (hotelError && typeof hotelError === 'object' && 'code' in hotelError && hotelError.code === '23505') {
+              // Hotel was created by another request, try to find it by ID
+              const foundHotel = await hotelRepository.findByHotelId(generatedHotelId);
+              if (foundHotel) {
+                competitorHotel = foundHotel;
+              } else {
+                return res.status(500).json({
+                  error: 'Failed to create competitor hotel',
+                  message: 'Hotel creation failed due to a database constraint violation. Please try again.',
+                  code: 'HOTEL_CREATION_FAILED'
+                });
+              }
+            } else {
+              const errorMessage = hotelError instanceof Error ? hotelError.message : 'Unknown error occurred';
+              return res.status(500).json({
+                error: 'Failed to create competitor hotel',
+                message: `Hotel creation failed: ${errorMessage}. Please check the hotel data and try again.`,
+                code: 'HOTEL_CREATION_FAILED'
+              });
+            }
+          }
+        }
+
+        finalCompetitorId = competitorHotel.hotelId;
+      } 
+      // Backward compatibility: use old format (competitorId)
+      else if (competitorId) {
+        // Verify competitor hotel exists
+        let competitorHotel = await hotelRepository.findByHotelId(competitorId);
+        
+        if (!competitorHotel) {
+          // Hotel not found - try to register it if we have the required information
+          if (name && latitude !== undefined && longitude !== undefined) {
+            // Validate GPS coordinates
+            if (typeof latitude !== 'number' || typeof longitude !== 'number' || 
+                isNaN(latitude) || isNaN(longitude)) {
+              return res.status(400).json({ 
+                error: 'Invalid GPS coordinates: latitude and longitude must be valid numbers',
+                code: 'INVALID_COORDINATES'
+              });
+            }
+
+            // Generate hotel ID from name and coordinates
+            const generatedHotelId = hotelRepository.generateHotelId(name, latitude, longitude);
+
+            // Verify the generated ID matches the provided competitorId
+            if (generatedHotelId !== competitorId) {
+              return res.status(400).json({ 
+                error: 'Competitor ID does not match provided hotel information. Please verify name, latitude, and longitude.',
+                code: 'ID_MISMATCH'
+              });
+            }
+
+            // Create new hotel for competitor (following same flow as onboarding)
+            try {
+              competitorHotel = await hotelRepository.create({
+                name,
+                gpsLatitude: latitude,
+                gpsLongitude: longitude,
+                address,
+                phone,
+                hotelClass,
+                serpApiData,
+                existingHotelId: competitorId,
+              });
+              console.log('Created new competitor hotel:', competitorId);
+            } catch (hotelError: unknown) {
+              // Handle unique constraint violation (race condition)
+              if (hotelError && typeof hotelError === 'object' && 'code' in hotelError && hotelError.code === '23505') {
+                // Hotel was created by another request, try to find it by ID
+                const foundHotel = await hotelRepository.findByHotelId(competitorId);
+                if (foundHotel) {
+                  competitorHotel = foundHotel;
+                } else {
+                  return res.status(500).json({
+                    error: 'Failed to create competitor hotel',
+                    message: 'Hotel creation failed due to a database constraint violation. Please try again.',
+                    code: 'HOTEL_CREATION_FAILED'
+                  });
+                }
+              } else {
+                const errorMessage = hotelError instanceof Error ? hotelError.message : 'Unknown error occurred';
+                return res.status(500).json({
+                  error: 'Failed to create competitor hotel',
+                  message: `Hotel creation failed: ${errorMessage}. Please check the hotel data and try again.`,
+                  code: 'HOTEL_CREATION_FAILED'
+                });
+              }
+            }
+          } else {
+            // Hotel not found and missing required information to register
+            return res.status(404).json({ 
+              error: 'Competitor hotel not found. Please provide name, latitude, and longitude to register the hotel.',
+              code: 'COMPETITOR_NOT_FOUND',
+              requiredFields: ['name', 'latitude', 'longitude']
+            });
+          }
+        }
+        
+        finalCompetitorId = competitorHotel.hotelId;
+      } 
+      // Neither format provided
+      else {
+        return res.status(400).json({ 
+          error: 'Either competitor information (name, latitude, longitude) or competitorId is required',
+          code: 'MISSING_COMPETITOR_DATA'
+        });
+      }
+
+      // Add competitor relationship
+      await hotelRepository.addCompetitor(hotelId, finalCompetitorId, type);
+
+      // Fetch updated competitors
+      const updatedCompetitors = await hotelRepository.getCompetitors(hotelId);
+
+      return res.json({
+        success: true,
+        message: 'Competitor added successfully',
+        data: updatedCompetitors
+      });
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        if (error.message.includes('already exists')) {
+          return res.status(409).json({ 
+            error: error.message,
+            code: 'COMPETITOR_EXISTS'
+          });
+        }
+        if (error.message.includes('Maximum')) {
+          return res.status(400).json({ 
+            error: error.message,
+            code: 'LIMIT_EXCEEDED'
+          });
+        }
+      }
+
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      return res.status(500).json({ 
+        error: 'Internal server error',
+        code: 'INTERNAL_ERROR',
+        message: errorMessage
+      });
+    }
+  }
+
+  async removeCompetitor(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { hotelId, competitorId } = req.params;
+
+      if (!hotelId) {
+        return res.status(400).json({ 
+          error: 'Hotel ID is required',
+          code: 'MISSING_HOTEL_ID'
+        });
+      }
+
+      if (!competitorId) {
+        return res.status(400).json({ 
+          error: 'Competitor ID is required',
+          code: 'MISSING_COMPETITOR_ID'
+        });
+      }
+
+      // Get authenticated user
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({ 
+          error: 'Authentication required',
+          code: 'UNAUTHORIZED'
+        });
+      }
+
+      // Fetch user to get their hotelId
+      const user = await userRepository.findById(req.user.id);
+      if (!user) {
+        return res.status(404).json({ 
+          error: 'User not found',
+          code: 'USER_NOT_FOUND'
+        });
+      }
+
+      // Validate that the user has access to this hotel
+      if (!user.hotelId || user.hotelId !== hotelId) {
+        return res.status(403).json({ 
+          error: 'Access denied: You can only manage competitors for your own hotel',
+          code: 'ACCESS_DENIED'
+        });
+      }
+
+      // Remove competitor
+      await hotelRepository.removeCompetitor(hotelId, competitorId);
+
+      return res.json({
+        success: true,
+        message: 'Competitor removed successfully'
+      });
+    } catch (error: unknown) {
+      if (error instanceof Error && error.message.includes('not found')) {
+        return res.status(404).json({ 
+          error: error.message,
+          code: 'COMPETITOR_NOT_FOUND'
+        });
+      }
+
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      return res.status(500).json({ 
+        error: 'Internal server error',
+        code: 'INTERNAL_ERROR',
+        message: errorMessage
+      });
+    }
+  }
+
+  async updateCompetitorType(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { hotelId, competitorId } = req.params;
+      const { type } = req.body;
+
+      if (!hotelId) {
+        return res.status(400).json({ 
+          error: 'Hotel ID is required',
+          code: 'MISSING_HOTEL_ID'
+        });
+      }
+
+      if (!competitorId) {
+        return res.status(400).json({ 
+          error: 'Competitor ID is required',
+          code: 'MISSING_COMPETITOR_ID'
+        });
+      }
+
+      if (!type || (type !== 'primary' && type !== 'secondary')) {
+        return res.status(400).json({ 
+          error: 'Type must be "primary" or "secondary"',
+          code: 'INVALID_TYPE'
+        });
+      }
+
+      // Get authenticated user
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({ 
+          error: 'Authentication required',
+          code: 'UNAUTHORIZED'
+        });
+      }
+
+      // Fetch user to get their hotelId
+      const user = await userRepository.findById(req.user.id);
+      if (!user) {
+        return res.status(404).json({ 
+          error: 'User not found',
+          code: 'USER_NOT_FOUND'
+        });
+      }
+
+      // Validate that the user has access to this hotel
+      if (!user.hotelId || user.hotelId !== hotelId) {
+        return res.status(403).json({ 
+          error: 'Access denied: You can only manage competitors for your own hotel',
+          code: 'ACCESS_DENIED'
+        });
+      }
+
+      // Update competitor type
+      await hotelRepository.updateCompetitorType(hotelId, competitorId, type);
+
+      // Fetch updated competitors
+      const updatedCompetitors = await hotelRepository.getCompetitors(hotelId);
+
+      return res.json({
+        success: true,
+        message: 'Competitor type updated successfully',
+        data: updatedCompetitors
+      });
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        if (error.message.includes('not found')) {
+          return res.status(404).json({ 
+            error: error.message,
+            code: 'COMPETITOR_NOT_FOUND'
+          });
+        }
+        if (error.message.includes('Maximum')) {
+          return res.status(400).json({ 
+            error: error.message,
+            code: 'LIMIT_EXCEEDED'
+          });
+        }
+      }
+
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       return res.status(500).json({ 
         error: 'Internal server error',

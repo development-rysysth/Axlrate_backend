@@ -1,6 +1,6 @@
 import { getPool } from '../config/database';
-import { Hotel } from '../../../../shared';
-import { mapSerpApiToHotel, HotelInsertData, generateHotelId } from '../../../serpapi-service/src/utils/hotel-mapper';
+import { Hotel, CompetitorEntry, CompetitorType, COMPETITOR_LIMITS } from '../../../../shared';
+import { mapSerpApiToHotel, HotelInsertData, generateHotelId } from '../../../hotel-service/src/utils/hotel-mapper';
 
 /**
  * Helper function to serialize Date objects and other non-JSON-serializable values
@@ -82,42 +82,193 @@ export interface CreateHotelData {
   existingHotelId?: string;
 }
 
+// Hotel search result interface - returns only essential fields as strings
+export interface HotelSearchResult {
+  hotelId: string;
+  hotelKey: string;
+  name: string;
+  country: string;
+  state: string;
+  city: string;
+  gpsLatitude: string | null;
+  gpsLongitude: string | null;
+  hotelClass: string | null;
+}
+
 export class HotelRepository {
   private getPool() {
     return getPool();
   }
 
   /**
-   * Find hotel by hotel_id (VARCHAR primary key)
+   * Find hotel by id (UUID primary key) or hotel_key
    */
   async findByHotelId(hotelId: string): Promise<Hotel | null> {
+    // Try to find by UUID first, then by hotel_key
     const query = `
       SELECT 
-        hotel_id as "hotelId", 
-        hotel_name as name, 
-        phone, 
-        address_full as address,
+        id as "hotelId", 
+        hotel_key as "hotelKey",
+        name, 
+        country,
+        state,
         city,
-        zip_code as "zipCode",
-        gps_lat as "gpsLatitude", 
-        gps_lon as "gpsLongitude",
+        latitude as "gpsLatitude", 
+        longitude as "gpsLongitude",
         star_rating as "hotelClass", 
-        review_score as "overallRating",
-        review_count as "reviewsCount",
-        review_tags as "reviewTags",
-        check_in_time as "checkInTime", 
-        check_out_time as "checkOutTime",
         nearby_places as "nearbyPlaces",
-        amenities_json as "amenitiesJson",
-        competitors,
-        suggested_competitors as "suggestedCompetitors"
+        amenities as "amenitiesJson",
+        COALESCE(competitors, '[]'::jsonb) as competitors,
+        COALESCE(suggested_competitors, ARRAY[]::TEXT[]) as "suggestedCompetitors",
+        is_active as "isActive"
       FROM hotels
-      WHERE hotel_id = $1
+      WHERE (id::text = $1 OR hotel_key = $1)
+        AND is_active = true
       LIMIT 1
     `;
 
     const result = await this.getPool().query(query, [hotelId]);
-    return result.rows[0] || null;
+    if (result.rows[0]) {
+      const hotel = result.rows[0];
+      return hotel;
+    }
+    return null;
+  }
+
+  /**
+   * Search hotels by name with optional filters
+   */
+  async searchHotels(
+    searchTerm: string,
+    page: number = 1,
+    pageSize: number = 20,
+    city?: string,
+    country?: string,
+    state?: string
+  ): Promise<{ hotels: HotelSearchResult[], total: number }> {
+    const offset = (page - 1) * pageSize;
+    const searchPattern = `%${searchTerm}%`;
+
+    // Build WHERE conditions
+    const conditions: string[] = [
+      'LOWER(name) LIKE LOWER($1)',
+      'is_active = true'
+    ];
+    const params: any[] = [searchPattern];
+    let paramIndex = 2;
+
+    if (city) {
+      conditions.push(`LOWER(city) = LOWER($${paramIndex})`);
+      params.push(city);
+      paramIndex++;
+    }
+
+    if (country) {
+      conditions.push(`LOWER(country) = LOWER($${paramIndex})`);
+      params.push(country);
+      paramIndex++;
+    }
+
+    if (state) {
+      conditions.push(`LOWER(state) = LOWER($${paramIndex})`);
+      params.push(state);
+      paramIndex++;
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    // Count query
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM hotels
+      WHERE ${whereClause}
+    `;
+
+    // Data query - return only required hotel fields
+    const dataQuery = `
+      SELECT 
+        id as "hotelId", 
+        hotel_key as "hotelKey",
+        name, 
+        country,
+        state,
+        city,
+        latitude as "gpsLatitude", 
+        longitude as "gpsLongitude",
+        star_rating as "hotelClass"
+      FROM hotels
+      WHERE ${whereClause}
+      ORDER BY name
+      OFFSET $${paramIndex} LIMIT $${paramIndex + 1}
+    `;
+
+    const countParams = params;
+    const dataParams = [...params, offset, pageSize];
+
+    const [countResult, dataResult] = await Promise.all([
+      this.getPool().query(countQuery, countParams),
+      this.getPool().query(dataQuery, dataParams)
+    ]);
+
+    const total = parseInt(countResult.rows[0].total, 10);
+    const hotels = dataResult.rows.map((row: any) => {
+      // Return only the required fields, converting numeric fields to strings
+      return {
+        hotelId: row.hotelId,
+        hotelKey: row.hotelKey,
+        name: row.name,
+        country: row.country,
+        state: row.state,
+        city: row.city,
+        gpsLatitude: row.gpsLatitude ? String(row.gpsLatitude) : null,
+        gpsLongitude: row.gpsLongitude ? String(row.gpsLongitude) : null,
+        hotelClass: row.hotelClass ? String(row.hotelClass) : null
+      };
+    });
+
+    return { hotels, total };
+  }
+
+  /**
+   * Find hotels by city with pagination
+   */
+  async findByCity(city: string, page: number = 1, pageSize: number = 20): Promise<{ hotels: Hotel[], total: number }> {
+    const offset = (page - 1) * pageSize;
+
+    // Count query - only active hotels
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM hotels
+      WHERE LOWER(city) = LOWER($1)
+        AND is_active = true
+    `;
+
+    // Data query - only active hotels, only return required fields
+    const dataQuery = `
+      SELECT 
+        id as "hotelId", 
+        hotel_key as "hotelKey",
+        name, 
+        country,
+        state,
+        city,
+        star_rating as "hotelClass"
+      FROM hotels
+      WHERE LOWER(city) = LOWER($1)
+        AND is_active = true
+      ORDER BY name
+      OFFSET $2 LIMIT $3
+    `;
+
+    const [countResult, dataResult] = await Promise.all([
+      this.getPool().query(countQuery, [city]),
+      this.getPool().query(dataQuery, [city, offset, pageSize])
+    ]);
+
+    const total = parseInt(countResult.rows[0].total, 10);
+    const hotels = dataResult.rows;
+
+    return { hotels, total };
   }
 
   /**
@@ -482,16 +633,102 @@ export class HotelRepository {
   }
 
   /**
-   * Update competitors for a hotel (for accepted competitors)
+   * Get current competitors for a hotel
    */
-  async updateCompetitors(hotelId: string, competitorIds: string[]): Promise<void> {
+  async getCompetitors(hotelId: string): Promise<CompetitorEntry[]> {
+    const hotel = await this.findByHotelId(hotelId);
+    return hotel?.competitors || [];
+  }
+
+  /**
+   * Get competitors by type
+   */
+  async getCompetitorsByType(hotelId: string, type: CompetitorType): Promise<CompetitorEntry[]> {
+    const competitors = await this.getCompetitors(hotelId);
+    return competitors.filter(c => c.type === type);
+  }
+
+  /**
+   * Validate competitor limits before adding
+   */
+  private validateCompetitorLimits(competitors: CompetitorEntry[], newType: CompetitorType): void {
+    const primaryCount = competitors.filter(c => c.type === 'primary').length;
+    const secondaryCount = competitors.filter(c => c.type === 'secondary').length;
+
+    if (newType === 'primary' && primaryCount >= COMPETITOR_LIMITS.PRIMARY) {
+      throw new Error(`Maximum ${COMPETITOR_LIMITS.PRIMARY} primary competitors allowed`);
+    }
+    if (newType === 'secondary' && secondaryCount >= COMPETITOR_LIMITS.SECONDARY) {
+      throw new Error(`Maximum ${COMPETITOR_LIMITS.SECONDARY} secondary competitors allowed`);
+    }
+  }
+
+  /**
+   * Update competitors for a hotel (full replacement)
+   */
+  async updateCompetitors(hotelId: string, competitors: CompetitorEntry[]): Promise<void> {
     const query = `
       UPDATE hotels
-      SET competitors = $1
-      WHERE hotel_id = $2
+      SET competitors = $1::jsonb
+      WHERE (id::text = $2 OR hotel_key = $2)
     `;
 
-    await this.getPool().query(query, [competitorIds, hotelId]);
+    await this.getPool().query(query, [JSON.stringify(competitors), hotelId]);
+  }
+
+  /**
+   * Add a competitor to a hotel
+   */
+  async addCompetitor(hotelId: string, competitorId: string, type: CompetitorType): Promise<void> {
+    const competitors = await this.getCompetitors(hotelId);
+    
+    // Check if already exists
+    if (competitors.some(c => c.hotelId === competitorId)) {
+      throw new Error('Competitor already exists');
+    }
+
+    // Validate limits
+    this.validateCompetitorLimits(competitors, type);
+
+    // Add new competitor
+    competitors.push({ hotelId: competitorId, type });
+    await this.updateCompetitors(hotelId, competitors);
+  }
+
+  /**
+   * Remove a competitor from a hotel
+   */
+  async removeCompetitor(hotelId: string, competitorId: string): Promise<void> {
+    const competitors = await this.getCompetitors(hotelId);
+    const filtered = competitors.filter(c => c.hotelId !== competitorId);
+    
+    if (filtered.length === competitors.length) {
+      throw new Error('Competitor not found');
+    }
+
+    await this.updateCompetitors(hotelId, filtered);
+  }
+
+  /**
+   * Update competitor type (primary ↔ secondary)
+   */
+  async updateCompetitorType(hotelId: string, competitorId: string, newType: CompetitorType): Promise<void> {
+    const competitors = await this.getCompetitors(hotelId);
+    const index = competitors.findIndex(c => c.hotelId === competitorId);
+    
+    if (index === -1) {
+      throw new Error('Competitor not found');
+    }
+
+    // If changing type, validate limits for the new type
+    if (competitors[index].type !== newType) {
+      // Temporarily remove this competitor to check limits
+      const tempCompetitors = competitors.filter(c => c.hotelId !== competitorId);
+      this.validateCompetitorLimits(tempCompetitors, newType);
+    }
+
+    competitors[index].type = newType;
+    await this.updateCompetitors(hotelId, competitors);
   }
 
   /**
@@ -501,7 +738,7 @@ export class HotelRepository {
     const query = `
       UPDATE hotels
       SET suggested_competitors = $1
-      WHERE hotel_id = $2
+      WHERE (id::text = $2 OR hotel_key = $2)
     `;
 
     await this.getPool().query(query, [competitorIds, hotelId]);

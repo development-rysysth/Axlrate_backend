@@ -136,12 +136,12 @@ app.use(
 app.use(
   '/api/serpapi',
   createProxyMiddleware({
-    target: SERVICE_URLS.SERPAPI_SERVICE,
+    target: SERVICE_URLS.HOTEL_SERVICE,
     changeOrigin: true,
     pathRewrite: { '^/api/serpapi': '/serpapi' },
     logLevel: 'debug',
     onProxyReq: (proxyReq, req: any) => {
-      console.log(`[PROXY] Forwarding ${req.method} to SerpAPI: ${proxyReq.path}`);
+      console.log(`[PROXY] Forwarding ${req.method} to Hotel Service: ${proxyReq.path}`);
       
       const contentType = req.get('Content-Type') || 'application/x-www-form-urlencoded';
 
@@ -161,30 +161,9 @@ app.use(
       }
     },
     onError: (err, req: Request, res: Response) => {
-      console.error('[PROXY ERROR] SerpAPI:', err.message);
+      console.error('[PROXY ERROR] Hotel Service:', err.message);
       if (!res.headersSent) {
-        res.status(503).json({ error: 'SerpAPI service unavailable', details: err.message });
-      }
-    },
-  })
-);
-
-// Calendar Data - Now using Aggregator Service with PostgreSQL
-app.use(
-  '/api/calendarData',
-  createProxyMiddleware({
-    target: SERVICE_URLS.AGGREGATOR_SERVICE,
-    changeOrigin: true,
-    pathRewrite: { '^/api/calendarData': '/v1/calendar-data' },
-    logLevel: 'debug',
-    onProxyReq: (proxyReq, req: any) => {
-      console.log(`[PROXY] Forwarding ${req.method} to Aggregator (calendarData): ${proxyReq.path}`);
-      forwardProxyBody(proxyReq, req);
-    },
-    onError: (err, _req: Request, res: Response) => {
-      console.error('[PROXY ERROR] Aggregator (calendarData):', err.message);
-      if (!res.headersSent) {
-        res.status(503).json({ error: 'Aggregator service unavailable', details: err.message });
+        res.status(503).json({ error: 'Hotel service unavailable', details: err.message });
       }
     },
   })
@@ -207,8 +186,6 @@ app.get('/', (req, res) => {
       v1: '/api/v1',
       auth: '/api/v1/auth',
       serpapi: '/api/v1/serpapi',
-      calendarData: '/api/v1/calendar-data',
-      aggregator: '/api/v1/aggregator',
       export: '/api/v1/export',
       hotelInfo: '/api/v1/hotel-info',
       hotels: '/api/v1/hotels',
@@ -232,10 +209,10 @@ function checkServiceHealth(url: string, serviceName: string) {
 app.listen(PORT, () => {
   console.log(`API Gateway running on port ${PORT}`);
   console.log(`Auth service: ${SERVICE_URLS.AUTH_SERVICE}`);
-  console.log(`SerpAPI service: ${SERVICE_URLS.SERPAPI_SERVICE}`);
+  console.log(`Hotel service: ${SERVICE_URLS.HOTEL_SERVICE}`);
   console.log('\nChecking service connectivity...');
   checkServiceHealth(SERVICE_URLS.AUTH_SERVICE, 'Auth Service');
-  checkServiceHealth(SERVICE_URLS.SERPAPI_SERVICE, 'SerpAPI Service');
+  checkServiceHealth(SERVICE_URLS.HOTEL_SERVICE, 'Hotel Service');
 });
 
 export default app;

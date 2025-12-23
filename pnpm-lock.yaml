@@ -181,6 +181,46 @@ importers:
         specifier: ^5.3.3
         version: 5.9.3
 
+  services/hotel-ingestion-service:
+    dependencies:
+      axios:
+        specifier: ^1.6.2
+        version: 1.13.2
+      cors:
+        specifier: ^2.8.5
+        version: 2.8.5
+      dotenv:
+        specifier: ^16.3.1
+        version: 16.6.1
+      express:
+        specifier: ^4.18.2
+        version: 4.21.2
+      pg:
+        specifier: ^8.11.3
+        version: 8.16.3
+    devDependencies:
+      '@types/cors':
+        specifier: ^2.8.17
+        version: 2.8.19
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.25
+      '@types/node':
+        specifier: ^20.10.6
+        version: 20.19.25
+      '@types/pg':
+        specifier: ^8.10.9
+        version: 8.15.6
+      nodemon:
+        specifier: ^3.0.1
+        version: 3.1.11
+      ts-node-dev:
+        specifier: ^2.0.0
+        version: 2.0.0(@types/node@20.19.25)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.3.3
+        version: 5.9.3
+
   services/ingest-service:
     dependencies:
       amqplib:

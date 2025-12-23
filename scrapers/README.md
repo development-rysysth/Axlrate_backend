@@ -5,11 +5,15 @@ This directory contains Python scrapers for various OTA (Online Travel Agency) p
 ## Structure
 
 - `common/` - Shared utilities and base classes
+  - `base_scraper.py` - Base scraper class
+  - `data_formatter.py` - Data formatting utilities
+  - `otas.py` - OTA constants and configurations
+  - `rate_limiter.py` - Rate limiting utilities
+  - `selenium_utils.py` - Selenium helper functions
 - `booking/` - Booking.com scraper
 - `expedia/` - Expedia scraper
 - `agoda/` - Agoda scraper
 - `trip/` - Trip.com scraper
-- `airbnb/` - Airbnb scraper
 
 ## Setup
 

@@ -22,55 +22,10 @@ const registerSchema = Joi.object<RegisterRequestBody>({
     'any.required': 'Hotel name is required',
   }),
   
-  // Selected Hotel (optional)
-  // If selectedHotel is provided, gps_coordinates is required
-  selectedHotel: Joi.object({
-    type: Joi.string().optional(),
-    name: Joi.string().min(2).optional(),
-    description: Joi.string().optional(),
-    link: Joi.string().optional(),
-    property_token: Joi.string().optional(),
-    serpapi_property_details_link: Joi.string().optional(),
-    address: Joi.string().optional(),
-    directions: Joi.string().optional(),
-    phone: Joi.string().optional(),
-    phone_link: Joi.string().optional(),
-    gps_coordinates: Joi.object({
-      latitude: Joi.number().required().messages({
-        'any.required': 'Latitude is required',
-        'number.base': 'Latitude must be a number',
-      }),
-      longitude: Joi.number().required().messages({
-        'any.required': 'Longitude is required',
-        'number.base': 'Longitude must be a number',
-      }),
-    }).required().messages({
-      'any.required': 'GPS coordinates are required when selectedHotel is provided',
-    }),
-    check_in_time: Joi.string().optional(),
-    check_out_time: Joi.string().optional(),
-    rate_per_night: Joi.any().optional(),
-    total_rate: Joi.any().optional(),
-    typical_price_range: Joi.any().optional(),
-    deal: Joi.string().optional(),
-    deal_description: Joi.string().optional(),
-    featured_prices: Joi.any().optional(),
-    prices: Joi.any().optional(),
-    nearby_places: Joi.any().optional(),
-    hotel_class: Joi.string().optional(),
-    extracted_hotel_class: Joi.number().optional(),
-    images: Joi.any().optional(),
-    overall_rating: Joi.number().optional(),
-    reviews: Joi.number().optional(),
-    ratings: Joi.any().optional(),
-    location_rating: Joi.number().optional(),
-    reviews_breakdown: Joi.any().optional(),
-    other_reviews: Joi.any().optional(),
-    amenities: Joi.any().optional(),
-    excluded_amenities: Joi.any().optional(),
-    amenities_detailed: Joi.any().optional(),
-    health_and_safety: Joi.any().optional(),
-  }).optional(),
+  // Hotel ID (optional - from hotels list)
+  hotelId: Joi.string().optional().messages({
+    'string.base': 'Hotel ID must be a string',
+  }),
   
   // Optional fields
   state: Joi.string().optional(),

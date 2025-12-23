@@ -241,6 +241,126 @@ Update user information.
 
 ---
 
+#### `GET /v1/hotels/:hotelId/suggested-competitors`
+Get suggested competitors for a hotel.
+
+**Response (200):**
+```json
+{
+  "suggestedCompetitors": [
+    {
+      "id": "hotel_123",
+      "name": "Competitor Hotel",
+      "location": "New York, NY",
+      "distance": 0.5
+    }
+  ]
+}
+```
+
+**Error Responses:**
+- `401`: Unauthorized
+- `404`: Hotel not found
+
+---
+
+#### `GET /v1/hotels/:hotelId/competitors`
+Get all competitors for a hotel.
+
+**Response (200):**
+```json
+{
+  "competitors": [
+    {
+      "id": "comp_123",
+      "hotelId": "hotel_123",
+      "competitorHotelId": "hotel_456",
+      "competitorType": "direct",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+**Error Responses:**
+- `401`: Unauthorized
+- `404`: Hotel not found
+
+---
+
+#### `POST /v1/hotels/:hotelId/competitors`
+Add a competitor to a hotel.
+
+**Request Body:**
+```json
+{
+  "competitorHotelId": "hotel_456",
+  "competitorType": "direct"
+}
+```
+
+**Response (201):**
+```json
+{
+  "id": "comp_123",
+  "hotelId": "hotel_123",
+  "competitorHotelId": "hotel_456",
+  "competitorType": "direct",
+  "createdAt": "2024-01-01T00:00:00.000Z"
+}
+```
+
+**Error Responses:**
+- `400`: Invalid data
+- `401`: Unauthorized
+- `404`: Hotel not found
+- `409`: Competitor already exists
+
+---
+
+#### `DELETE /v1/hotels/:hotelId/competitors/:competitorId`
+Remove a competitor from a hotel.
+
+**Response (200):**
+```json
+{
+  "message": "Competitor removed successfully",
+  "success": true
+}
+```
+
+**Error Responses:**
+- `401`: Unauthorized
+- `404`: Competitor not found
+
+---
+
+#### `PATCH /v1/hotels/:hotelId/competitors/:competitorId`
+Update competitor type.
+
+**Request Body:**
+```json
+{
+  "competitorType": "indirect"
+}
+```
+
+**Response (200):**
+```json
+{
+  "id": "comp_123",
+  "competitorType": "indirect",
+  "updatedAt": "2024-01-01T00:00:00.000Z"
+}
+```
+
+**Error Responses:**
+- `400`: Invalid data
+- `401`: Unauthorized
+- `404`: Competitor not found
+
+---
+
 ### Health Check
 
 #### `GET /health`
@@ -439,6 +559,5 @@ curl -X POST http://localhost:3001/v1/login \
 ## Related Services
 
 - [API Gateway](../api-gateway/README.md)
-- [Aggregator Service](../aggregator-service/README.md)
-- [SerpAPI Service](../serpapi-service/README.md)
+- [Hotel Service](../hotel-service/README.md)
 

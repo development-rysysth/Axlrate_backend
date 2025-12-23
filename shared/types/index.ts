@@ -47,7 +47,7 @@ export interface Hotel {
   checkOutTime?: string;
   nearbyPlaces?: any; // JSONB field
   amenitiesJson?: any; // JSONB field containing comprehensive SerpAPI data
-  competitors?: string[]; // Array of accepted competitor hotel_ids
+  competitors?: Array<{hotelId: string, type: "primary" | "secondary"}>; // Array of competitor objects with type
   suggestedCompetitors?: string[]; // Array of suggested competitor hotel_ids (initially populated)
   createdAt?: Date;
   updatedAt?: Date;
@@ -82,45 +82,7 @@ export interface RegisterRequestBody {
   currentPMS: string;
   businessType: 'Independent Hotel' | 'Chain Hotel' | 'Hotel Management Company' | "OTA's";
   password: string;
-  selectedHotel?: {
-    type?: string;
-    name: string;
-    description?: string;
-    link?: string;
-    property_token?: string;
-    serpapi_property_details_link?: string;
-    address?: string;
-    directions?: string;
-    phone?: string;
-    phone_link?: string;
-    gps_coordinates: {
-      latitude: number;
-      longitude: number;
-    };
-    check_in_time?: string;
-    check_out_time?: string;
-    rate_per_night?: any;
-    total_rate?: any;
-    typical_price_range?: any;
-    deal?: string;
-    deal_description?: string;
-    featured_prices?: any;
-    prices?: any;
-    nearby_places?: any;
-    hotel_class?: string;
-    extracted_hotel_class?: number;
-    images?: any;
-    overall_rating?: number;
-    reviews?: number;
-    ratings?: any;
-    location_rating?: number;
-    reviews_breakdown?: any;
-    other_reviews?: any;
-    amenities?: any;
-    excluded_amenities?: any;
-    amenities_detailed?: any;
-    health_and_safety?: any;
-  };
+  hotelId?: string; // Hotel ID from hotels table
   state?: string;
   city?: string;
   role?: string;
@@ -137,15 +99,19 @@ export interface RefreshTokenRequestBody {
   refreshToken: string;
 }
 
-// SerpAPI Request Body
+// Hotel Rates Request Body
 export interface FetchRatesRequestBody {
   hotelName: string;
-  checkInDate: string | Date;
-  checkOutDate: string | Date;
+  checkInDate?: string | Date;
+  checkOutDate?: string | Date;
+  country?: string;
+  state?: string;
+  city?: string;
+  adults?: number;
+  // Legacy SerpAPI fields (kept for backward compatibility)
   gl?: string;
   hl?: string;
   currency?: string;
-  adults?: number;
 }
 
 // SerpAPI Fetch Parameters
@@ -163,10 +129,42 @@ export interface SearchHotelRequestBody {
   hotelName: string;
   countryCode: string;
   stateName: string;
-  checkInDate: string | Date;
-  checkOutDate: string | Date;
+  checkInDate?: string | Date;
+  checkOutDate?: string | Date;
+  adults?: number;
+  // Legacy SerpAPI fields (kept for backward compatibility)
   hl?: string;
   currency?: string;
-  adults?: number;
+}
+
+// Competitor limits
+export const COMPETITOR_LIMITS = {
+  PRIMARY: 10,
+  SECONDARY: 10
+} as const;
+
+// Competitor type
+export type CompetitorType = "primary" | "secondary";
+
+// Competitor entry
+export interface CompetitorEntry {
+  hotelId: string;
+  type: CompetitorType;
+}
+
+// Add Competitor Request Body
+export interface AddCompetitorRequestBody {
+  // New format (recommended)
+  name?: string;
+  latitude?: number;
+  longitude?: number;
+  address?: string;
+  phone?: string;
+  hotelClass?: string;
+  serpApiData?: any;
+  type: 'primary' | 'secondary';
+  
+  // Backward compatibility (old format)
+  competitorId?: string;
 }
 

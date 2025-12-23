@@ -592,8 +592,8 @@ Set TTL for time-sensitive jobs:
 
 ## Related Services
 
-- [Ingest Service](../ingest-service/README.md) - Receives scraped data
-- [SerpAPI Service](../serpapi-service/README.md) - Alternative data source
+- [Hotel Ingestion Service](../hotel-ingestion-service/README.md) - Receives scraped data
+- [Hotel Service](../hotel-service/README.md) - Provides hotel data queries
 - [API Gateway](../api-gateway/README.md) - Entry point for job requests
 
 ## Related Scrapers

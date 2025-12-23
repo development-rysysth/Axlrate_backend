@@ -132,45 +132,21 @@ router.use(
 router.use(
   '/serpapi',
   createProxyMiddleware({
-    target: SERVICE_URLS.SERPAPI_SERVICE,
+    target: SERVICE_URLS.HOTEL_SERVICE,
     changeOrigin: true,
     pathRewrite: { '^/api/v1/serpapi': '/v1/serpapi' },
     logLevel: 'debug',
     onProxyReq: (proxyReq, req: any) => {
-      console.log(`[PROXY] Forwarding ${req.method} to SerpAPI: ${proxyReq.path}`);
+      console.log(`[PROXY] Forwarding ${req.method} to Hotel Service: ${proxyReq.path}`);
       forwardProxyBody(proxyReq, req);
     },
     onError: (err, req: Request, res: Response) => {
-      console.error('[PROXY ERROR] SerpAPI:', err.message);
+      console.error('[PROXY ERROR] Hotel Service:', err.message);
       if (!res.headersSent) {
-        res.status(503).json({ error: 'SerpAPI service unavailable', details: err.message });
+        res.status(503).json({ error: 'Hotel service unavailable', details: err.message });
       }
     },
   })
-);
-
-// ========================================
-// AGGREGATOR SERVICE ROUTES
-// ========================================
-
-// Calendar data
-router.use(
-  '/calendar-data',
-  createServiceProxy(
-    SERVICE_URLS.AGGREGATOR_SERVICE,
-    { '^/api/v1/calendar-data': '/v1/calendar-data' },
-    'Aggregator Service (Calendar)'
-  )
-);
-
-// Other aggregator routes
-router.use(
-  '/aggregator',
-  createServiceProxy(
-    SERVICE_URLS.AGGREGATOR_SERVICE,
-    { '^/api/v1/aggregator': '/v1' },
-    'Aggregator Service'
-  )
 );
 
 // ========================================
@@ -187,24 +163,24 @@ router.use(
 );
 
 // ========================================
-// HOTEL INFO SERVICE ROUTES (now handled by SerpAPI Service)
+// HOTEL INFO SERVICE ROUTES (now handled by Hotel Service)
 // ========================================
 
 router.use(
   '/hotel-info',
   createProxyMiddleware({
-    target: SERVICE_URLS.SERPAPI_SERVICE,
+    target: SERVICE_URLS.HOTEL_SERVICE,
     changeOrigin: true,
     pathRewrite: { '^/api/v1/hotel-info': '/v1/serpapi' },
     logLevel: 'debug',
     onProxyReq: (proxyReq, req: any) => {
-      console.log(`[PROXY] Forwarding ${req.method} to SerpAPI (hotel-info): ${proxyReq.path}`);
+      console.log(`[PROXY] Forwarding ${req.method} to Hotel Service (hotel-info): ${proxyReq.path}`);
       forwardProxyBody(proxyReq, req);
     },
     onError: (err, req: Request, res: Response) => {
-      console.error('[PROXY ERROR] SerpAPI (hotel-info):', err.message);
+      console.error('[PROXY ERROR] Hotel Service (hotel-info):', err.message);
       if (!res.headersSent) {
-        res.status(503).json({ error: 'SerpAPI service unavailable', details: err.message });
+        res.status(503).json({ error: 'Hotel service unavailable', details: err.message });
       }
     },
   })

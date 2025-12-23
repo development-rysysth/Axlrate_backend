@@ -35,15 +35,13 @@ The gateway uses `http-proxy-middleware` to proxy requests to backend services:
 ### Service Configuration
 
 Services are configured in `src/config/services.ts`:
-- Auth Service (User authentication)
-- SerpAPI Service (Hotel rate searches)
-- Aggregator Service (Calendar data aggregation)
-- Export Service (Data export functionality)
+- Auth Service (User authentication and hotel/competitor management)
+- Hotel Service (Hotel rate searches from database)
+- Hotel Ingestion Service (Hotel data ingestion from SerpAPI)
 
 ### Special Handling
 
-- **SerpAPI Routes**: Custom raw body capture for URL-encoded form data
-- **Calendar Data**: Routes to Aggregator Service with PostgreSQL backend
+- **Hotel Service Routes**: Routes to hotel-service for rate searches and location data
 - **Legacy Routes**: Backward compatibility for migration period
 
 ## API Endpoints
@@ -60,9 +58,8 @@ Returns the gateway health status and connected services.
   "service": "api-gateway",
   "services": {
     "AUTH_SERVICE": "http://localhost:3001",
-    "SERPAPI_SERVICE": "http://localhost:3003",
-    "AGGREGATOR_SERVICE": "http://localhost:3005",
-    "EXPORT_SERVICE": "http://localhost:3006"
+    "HOTEL_SERVICE": "http://localhost:3003",
+    "INGEST_SERVICE": "http://localhost:3004"
   }
 }
 ```
@@ -77,12 +74,10 @@ Returns available endpoints and API information.
   "version": "v1",
   "endpoints": {
     "v1": "/api/v1",
-    "auth": "/api/v1/auth",
+    "auth": "/api/v1",
     "serpapi": "/api/v1/serpapi",
-    "calendarData": "/api/v1/calendar-data",
-    "aggregator": "/api/v1/aggregator",
-    "export": "/api/v1/export",
     "hotelInfo": "/api/v1/hotel-info",
+    "hotels": "/api/v1/hotels",
     "health": "/health"
   }
 }
@@ -100,33 +95,29 @@ All routes under `/api/v1/` are proxied to their respective services:
 - `GET /users/:id` → Auth Service
 - `PUT /users/:id` → Auth Service
 
-#### SerpAPI (`/api/v1/serpapi`)
-- `GET /fetch-rates` → SerpAPI Service
-- `POST /fetch-rates` → SerpAPI Service
-- `POST /batch-fetch-rates` → SerpAPI Service
-- `GET /calendar-data` → SerpAPI Service
+#### Hotels (`/api/v1/hotels`)
+- All hotel and competitor management routes → Auth Service
 
-#### Calendar Data (`/api/v1/calendar-data`)
-- `POST /` → Aggregator Service (filtered calendar data)
-- `POST /aggregated` → Aggregator Service (aggregated statistics)
-
-#### Insights (`/api/v1/aggregator`)
-- All aggregator routes → Aggregator Service
-
-#### Export (`/api/v1/export`)
-- All export routes → Export Service
+#### Hotel Service (`/api/v1/serpapi`)
+- `GET /fetch-rates` → Hotel Service (queries database)
+- `POST /fetch-rates` → Hotel Service (queries database)
+- `POST /batch-fetch-rates` → Hotel Service
+- `GET /calendar-data` → Hotel Service
+- `GET /countries` → Hotel Service
+- `GET /states` → Hotel Service
+- `GET /cities` → Hotel Service
+- `POST /search-hotel` → Hotel Service
 
 #### Hotel Info (`/api/v1/hotel-info`)
-- `GET /countries` → SerpAPI Service (Fetch all countries from database)
-- `GET /states?countryCode=US` → SerpAPI Service (Fetch states by country from database)
-- `POST /search-hotel` → SerpAPI Service (Search hotels using SerpAPI with country and state)
+- `GET /countries` → Hotel Service (Fetch all countries from database)
+- `GET /states?countryCode=US` → Hotel Service (Fetch states by country from database)
+- `GET /cities?stateId=<uuid>` OR `GET /cities?countryCode=US&stateName=Wisconsin` → Hotel Service (Fetch cities by state)
+- `POST /search-hotel` → Hotel Service (Search hotels from database with country and state)
 
 ### Legacy Routes (Backward Compatibility)
 
-- `/api/auth/*` → Auth Service
-- `/api/users/*` → Auth Service
-- `/api/serpapi/*` → SerpAPI Service
-- `/api/calendarData` → Aggregator Service
+- `/api/v1/auth/*` → Auth Service (maintained for backward compatibility)
+- `/api/serpapi/*` → Hotel Service (maintained for backward compatibility)
 
 ## Technologies Used
 
@@ -146,9 +137,10 @@ GATEWAY_PORT=3000
 
 # Service URLs
 AUTH_SERVICE_URL=http://localhost:3001
+HOTEL_SERVICE_URL=http://localhost:3003
+INGEST_SERVICE_URL=http://localhost:3004
+# Legacy alias for backward compatibility
 SERPAPI_SERVICE_URL=http://localhost:3003
-AGGREGATOR_SERVICE_URL=http://localhost:3005
-EXPORT_SERVICE_URL=http://localhost:3006
 ```
 
 ## Installation
@@ -252,7 +244,7 @@ The gateway logs:
 ## Related Services
 
 - [Auth Service](../auth-service/README.md)
-- [SerpAPI Service](../serpapi-service/README.md)
-- [Aggregator Service](../aggregator-service/README.md)
-- [Export Service](../export-service/README.md)
+- [Hotel Service](../hotel-service/README.md)
+- [Hotel Ingestion Service](../hotel-ingestion-service/README.md)
+- [Scraper Orchestrator](../scraper-orchestrator/README.md)
 

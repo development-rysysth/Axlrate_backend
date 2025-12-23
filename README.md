@@ -13,7 +13,6 @@ This project follows a microservices architecture with separation of concerns:
 
 ### New Services (Skeletons)
 - **Ingest Service** (`services/ingest-service`) - Ingests and normalizes scraped data into PostgreSQL
-- **Aggregator Service** (`services/aggregator-service`) - Aggregates rates from multiple sources and provides analytics
 - **Export Service** (`services/export-service`) - Handles data export functionality (CSV, Excel, JSON)
 - **Scraper Orchestrator** (`services/scraper-orchestrator`) - Orchestrates Python OTA scrapers via RabbitMQ
 
@@ -159,7 +158,7 @@ All endpoints are accessed through the API Gateway at `http://localhost:3000`
 
 #### Register
 ```http
-POST /api/auth/register
+POST /api/v1/register
 Content-Type: application/json
 
 {
@@ -207,7 +206,7 @@ Response:
 
 #### Login
 ```http
-POST /api/auth/login
+POST /api/v1/login
 Content-Type: application/json
 
 {
@@ -242,7 +241,7 @@ Response:
 
 #### Refresh Token
 ```http
-POST /api/auth/refresh
+POST /api/v1/refresh
 Content-Type: application/json
 
 {
@@ -259,7 +258,7 @@ Response:
 
 #### Logout
 ```http
-POST /api/auth/logout
+POST /api/v1/logout
 Content-Type: application/json
 
 {
@@ -271,14 +270,14 @@ Content-Type: application/json
 
 #### Get User Profile
 ```http
-GET /api/users/:id
+GET /api/v1/users/:id
 Authorization: Bearer <accessToken>
 ```
 
 Response:
 ```json
 {
-  "_id": "507f1f77bcf86cd799439011",
+  "id": 1,
   "name": "John Doe",
   "businessEmail": "john@hotel.com",
   "country": "United States",
@@ -294,7 +293,7 @@ Response:
 
 #### Update User Profile
 ```http
-PUT /api/users/:id
+PUT /api/v1/users/:id
 Authorization: Bearer <accessToken>
 Content-Type: application/json
 
@@ -306,6 +305,49 @@ Content-Type: application/json
 ```
 
 Note: You can update any field except `password` and `refreshTokens`. Password updates should be handled through a separate endpoint.
+
+### Hotel & Competitor Endpoints
+
+#### Get Suggested Competitors
+```http
+GET /api/v1/hotels/:hotelId/suggested-competitors
+Authorization: Bearer <accessToken>
+```
+
+#### Get Hotel Competitors
+```http
+GET /api/v1/hotels/:hotelId/competitors
+Authorization: Bearer <accessToken>
+```
+
+#### Add Competitor
+```http
+POST /api/v1/hotels/:hotelId/competitors
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+
+{
+  "competitorHotelId": "hotel_456",
+  "competitorType": "direct"
+}
+```
+
+#### Remove Competitor
+```http
+DELETE /api/v1/hotels/:hotelId/competitors/:competitorId
+Authorization: Bearer <accessToken>
+```
+
+#### Update Competitor Type
+```http
+PATCH /api/v1/hotels/:hotelId/competitors/:competitorId
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+
+{
+  "competitorType": "indirect"
+}
+```
 
 ### SerpAPI Endpoints
 
@@ -365,7 +407,6 @@ Response:
 - Auth Service: `3001`
 - SerpAPI Service: `3003`
 - Ingest Service: `3004`
-- Aggregator Service: `3005`
 - Export Service: `3006`
 - Scraper Orchestrator: `3007`
 
@@ -411,7 +452,6 @@ Axlrate_backend/
 │   │   │   └── repositories/
 │   │   └── models/
 │   ├── ingest-service/    # Data ingestion service
-│   ├── aggregator-service/# Rate aggregation service
 │   ├── export-service/     # Data export service
 │   └── scraper-orchestrator/# Scraper orchestration
 ├── db/                    # Shared database configurations
@@ -436,9 +476,7 @@ This project uses **PostgreSQL** for all data storage. The database includes:
 
 - **Users Table**: User accounts with authentication
 - **Hotels Table**: Hotel information and details
-- **Rates Table**: Rate data from SerpAPI
-- **OTA Rates Table**: Normalized OTA rate data
-- **SerpData Table**: Raw SerpAPI responses
+- **Room Data Table**: Rate and room availability data from OTAs
 - **Location Tables**: Countries, states, cities
 
 ### PostgreSQL Setup
