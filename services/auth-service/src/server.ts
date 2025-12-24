@@ -8,7 +8,6 @@ dotenv.config({ path: rootEnvPath });
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { connectDB } from './config/database';
-import { connectDB as connectHotelDB } from '../../hotel-service/src/config/database';
 import authRoutes from './routes/v1/auth-routes';
 
 const app = express();
@@ -34,8 +33,6 @@ app.get('/health', (_req: Request, res: Response) => {
 const startServer = async () => {
   try {
     await connectDB();
-    // Also initialize hotel-service database connection for shared utilities
-    await connectHotelDB();
     
     app.listen(PORT, () => {
       console.log(`Auth service running on port ${PORT}`);

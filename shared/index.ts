@@ -14,3 +14,6 @@ export * from './types';
 // Constants
 export * from './constants';
 
+// Hotel utilities
+export * from './utils/hotel-mapper';
+

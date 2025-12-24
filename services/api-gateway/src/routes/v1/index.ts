@@ -14,13 +14,13 @@ const router = Router();
 router.post('/register', createProxyMiddleware({
   target: SERVICE_URLS.AUTH_SERVICE,
   changeOrigin: true,
-  pathRewrite: { '^/api/v1/register': '/v1/register' },
+  pathRewrite: { '^/register': '/v1/register' },
   logLevel: 'debug',
   onProxyReq: (proxyReq, req) => {
     console.log(`[PROXY] Forwarding ${req.method} to Auth: ${proxyReq.path}`);
     forwardProxyBody(proxyReq, req);
   },
-  onError: (err, req: Request, res: Response) => {
+  onError: (err, _req: Request, res: Response) => {
     console.error('[PROXY ERROR] Auth Service:', err.message);
     if (!res.headersSent) {
       res.status(503).json({ error: 'Auth service unavailable', details: err.message });
@@ -31,13 +31,13 @@ router.post('/register', createProxyMiddleware({
 router.post('/login', createProxyMiddleware({
   target: SERVICE_URLS.AUTH_SERVICE,
   changeOrigin: true,
-  pathRewrite: { '^/api/v1/login': '/v1/login' },
+  pathRewrite: { '^/login': '/v1/login' },
   logLevel: 'debug',
   onProxyReq: (proxyReq, req) => {
     console.log(`[PROXY] Forwarding ${req.method} to Auth: ${proxyReq.path}`);
     forwardProxyBody(proxyReq, req);
   },
-  onError: (err, req: Request, res: Response) => {
+  onError: (err, _req: Request, res: Response) => {
     console.error('[PROXY ERROR] Auth Service:', err.message);
     if (!res.headersSent) {
       res.status(503).json({ error: 'Auth service unavailable', details: err.message });
@@ -48,13 +48,13 @@ router.post('/login', createProxyMiddleware({
 router.post('/logout', createProxyMiddleware({
   target: SERVICE_URLS.AUTH_SERVICE,
   changeOrigin: true,
-  pathRewrite: { '^/api/v1/logout': '/v1/logout' },
+  pathRewrite: { '^/logout': '/v1/logout' },
   logLevel: 'debug',
   onProxyReq: (proxyReq, req) => {
     console.log(`[PROXY] Forwarding ${req.method} to Auth: ${proxyReq.path}`);
     forwardProxyBody(proxyReq, req);
   },
-  onError: (err, req: Request, res: Response) => {
+  onError: (err, _req: Request, res: Response) => {
     console.error('[PROXY ERROR] Auth Service:', err.message);
     if (!res.headersSent) {
       res.status(503).json({ error: 'Auth service unavailable', details: err.message });
@@ -65,13 +65,13 @@ router.post('/logout', createProxyMiddleware({
 router.post('/refresh', createProxyMiddleware({
   target: SERVICE_URLS.AUTH_SERVICE,
   changeOrigin: true,
-  pathRewrite: { '^/api/v1/refresh': '/v1/refresh' },
+  pathRewrite: { '^/refresh': '/v1/refresh' },
   logLevel: 'debug',
   onProxyReq: (proxyReq, req) => {
     console.log(`[PROXY] Forwarding ${req.method} to Auth: ${proxyReq.path}`);
     forwardProxyBody(proxyReq, req);
   },
-  onError: (err, req: Request, res: Response) => {
+  onError: (err, _req: Request, res: Response) => {
     console.error('[PROXY ERROR] Auth Service:', err.message);
     if (!res.headersSent) {
       res.status(503).json({ error: 'Auth service unavailable', details: err.message });
@@ -83,13 +83,13 @@ router.post('/refresh', createProxyMiddleware({
 router.use('/users', createProxyMiddleware({
   target: SERVICE_URLS.AUTH_SERVICE,
   changeOrigin: true,
-  pathRewrite: { '^/api/v1/users': '/v1/users' },
+  pathRewrite: { '^/users': '/v1/users' },
   logLevel: 'debug',
   onProxyReq: (proxyReq, req) => {
     console.log(`[PROXY] Forwarding ${req.method} to Auth Users: ${proxyReq.path}`);
     forwardProxyBody(proxyReq, req);
   },
-  onError: (err, req: Request, res: Response) => {
+  onError: (err, _req: Request, res: Response) => {
     console.error('[PROXY ERROR] Auth Service:', err.message);
     if (!res.headersSent) {
       res.status(503).json({ error: 'Auth service unavailable', details: err.message });
@@ -101,13 +101,13 @@ router.use('/users', createProxyMiddleware({
 router.use('/hotels', createProxyMiddleware({
   target: SERVICE_URLS.AUTH_SERVICE,
   changeOrigin: true,
-  pathRewrite: { '^/api/v1/hotels': '/v1/hotels' },
+  pathRewrite: { '^/hotels': '/v1/hotels' },
   logLevel: 'debug',
   onProxyReq: (proxyReq, req) => {
     console.log(`[PROXY] Forwarding ${req.method} to Auth Hotels: ${proxyReq.path}`);
     forwardProxyBody(proxyReq, req);
   },
-  onError: (err, req: Request, res: Response) => {
+  onError: (err, _req: Request, res: Response) => {
     console.error('[PROXY ERROR] Auth Service:', err.message);
     if (!res.headersSent) {
       res.status(503).json({ error: 'Auth service unavailable', details: err.message });
@@ -120,7 +120,7 @@ router.use(
   '/auth',
   createServiceProxy(
     SERVICE_URLS.AUTH_SERVICE,
-    { '^/api/v1/auth': '/v1' },
+    { '^/auth': '/v1' },
     'Auth Service'
   )
 );
@@ -134,13 +134,13 @@ router.use(
   createProxyMiddleware({
     target: SERVICE_URLS.HOTEL_SERVICE,
     changeOrigin: true,
-    pathRewrite: { '^/api/v1/serpapi': '/v1/serpapi' },
+    pathRewrite: { '^/serpapi': '/v1/serpapi' },
     logLevel: 'debug',
     onProxyReq: (proxyReq, req: any) => {
       console.log(`[PROXY] Forwarding ${req.method} to Hotel Service: ${proxyReq.path}`);
       forwardProxyBody(proxyReq, req);
     },
-    onError: (err, req: Request, res: Response) => {
+    onError: (err, _req: Request, res: Response) => {
       console.error('[PROXY ERROR] Hotel Service:', err.message);
       if (!res.headersSent) {
         res.status(503).json({ error: 'Hotel service unavailable', details: err.message });
@@ -157,7 +157,7 @@ router.use(
   '/export',
   createServiceProxy(
     SERVICE_URLS.EXPORT_SERVICE,
-    { '^/api/v1/export': '/v1' },
+    { '^/export': '/v1' },
     'Export Service'
   )
 );
@@ -171,13 +171,13 @@ router.use(
   createProxyMiddleware({
     target: SERVICE_URLS.HOTEL_SERVICE,
     changeOrigin: true,
-    pathRewrite: { '^/api/v1/hotel-info': '/v1/serpapi' },
+    pathRewrite: { '^/hotel-info': '/v1/serpapi' },
     logLevel: 'debug',
     onProxyReq: (proxyReq, req: any) => {
       console.log(`[PROXY] Forwarding ${req.method} to Hotel Service (hotel-info): ${proxyReq.path}`);
       forwardProxyBody(proxyReq, req);
     },
-    onError: (err, req: Request, res: Response) => {
+    onError: (err, _req: Request, res: Response) => {
       console.error('[PROXY ERROR] Hotel Service (hotel-info):', err.message);
       if (!res.headersSent) {
         res.status(503).json({ error: 'Hotel service unavailable', details: err.message });

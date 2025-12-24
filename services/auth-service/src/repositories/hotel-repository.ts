@@ -1,6 +1,5 @@
 import { getPool } from '../config/database';
-import { Hotel, CompetitorEntry, CompetitorType, COMPETITOR_LIMITS } from '../../../../shared';
-import { mapSerpApiToHotel, HotelInsertData, generateHotelId } from '../../../hotel-service/src/utils/hotel-mapper';
+import { Hotel, CompetitorEntry, CompetitorType, COMPETITOR_LIMITS, mapSerpApiToHotel, HotelInsertData, generateHotelId } from '../../../../shared';
 
 /**
  * Helper function to serialize Date objects and other non-JSON-serializable values
